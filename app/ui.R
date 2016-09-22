@@ -5,8 +5,6 @@ library(shinyjs)
 
 source("f.R")
 
-options(scipen = 999)
-
 ### Preliminary lists
 acc_list <- dbquery("SELECT id FROM account")$id
 names(acc_list) <- dbquery("SELECT account_name FROM account")$account_name
@@ -20,8 +18,8 @@ names(ccy_list) <- dbquery("SELECT iso_code FROM currency")$iso_code
 ### Shiny UI
 shinyUI(
     dashboardPage(
-        dashboardHeader(title="FinApp", titleWidth = "270px"),
-        dashboardSidebar(width = "270px",
+        dashboardHeader(title="FinApp", titleWidth = "250px"),
+        dashboardSidebar(width = "250px",
             sidebarMenu(
                 menuItem("Home", tabName = "home", icon = icon("home")),
                 menuItem("Funds",tabName = NULL, icon = icon("line-chart"),
@@ -33,8 +31,8 @@ shinyUI(
                             menuSubItem("Manage accounts", tabName = "adm_acc"),
                             menuSubItem("Manage funds", tabName = "adm_fund"),
                             menuSubItem("Manage currencies", tabName = "adm_ccy"),
-                            menuSubItem("Manage fund investment transactions", tabName = "adm_invtr"),
-                            menuSubItem("Upload fund prices", tabName = "adm_fundprices")
+                            menuSubItem("Manage investment transactions", tabName = "adm_invtr"),
+                            menuSubItem("Upload fund prices", tabName = "adm_fund_price_upl")
                          )
             )
         ),
@@ -49,20 +47,6 @@ shinyUI(
 ### Page: Fund Investment Overview
                 tabItem(tabName = "funds_ov",
                         h2("Fund Investment Overview"),
-                        fluidRow(
-                            valueBox(value = textOutput("funds_ov_tot_fund_inv"), 
-                                     "Total Fund Investment (HUF)", 
-                                     icon = icon("money"),
-                                     color = "light-blue"),
-                            valueBox(value = textOutput("fund_ov_tot_fund_yield"),
-                                     "Total Net Yield (HUF)",
-                                     icon = icon("bar-chart"),
-                                     color="green"),
-                            valueBox(value = textOutput("fund_ov_tot_fund_yield_pct"),
-                                     "Annualized Net Yield (%)",
-                                     icon = icon("percent"),
-                                     color="yellow")
-                        ),
                         fluidRow(
                             box(DT::dataTableOutput("fundtable"),width = 12, status="primary")
                             )
@@ -160,7 +144,7 @@ tabItem(tabName = "adm_ccy",
 ### Page: Manage Investment Transactions
                 tabItem(tabName = "adm_invtr",
                         fluidRow(
-                                box(title="Add fund investment transaction",
+                                box(title="Add investment transaction",
                                     solidHeader = T,
                                     status = "danger",
                                     width = 12,
@@ -212,23 +196,21 @@ tabItem(tabName = "adm_ccy",
 ################################################################################
 
 ### Page: Upload Fund Prices
-                tabItem(tabName = "adm_fundprices",
+                tabItem(tabName = "adm_fund_price_upl",
                         h3("Administration - Fund Prices"),
                         fluidRow(
-                            box(title="Fund Price Bulk Upload", 
-                                solidHeader = T,
-                                status="danger",
-                                fileInput("adm_fundprices_upl_file_inp", "Choose File",
+                            box(
+                                fileInput("file_fundprices", "Choose File",
                                           accept = c(".xls",".xlsx")
                                 ),
-                                tableOutput("adm_fundprices_upl_file_desc"),
-                                actionButton("adm_fundprices_upl_btn","Import", icon("database")),
+                                tableOutput("upl_file_desc"),
+                                actionButton("upload_fundprices","Import", icon("database")),
                                 textOutput("fp_upl_error"),
                                 width = 8
                                )
                         ),
                         fluidRow(
-                            box(DT::dataTableOutput("adm_fundprices_reviewtbl"),width = 12)
+                            box(DT::dataTableOutput("fundprices_full"),width = 12)
                         )
                 )
 ################################################################################

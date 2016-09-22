@@ -11,42 +11,6 @@ shinyServer(
 
 ###############################################################################
 ### Page: Funds > Overview
-    q_funds_ov_tot_fund_inv <-#reactive({
-        #input$ # placeholder for reactive trigger
-        dbquery("SELECT ROUND(SUM(amount)) FROM investment_transaction")
-    #})
-    output$funds_ov_tot_fund_inv <- shiny::renderText(format(q_funds_ov_tot_fund_inv[1,1], big.mark=" "))
-    
-    q_fund_ov_tot_fund_yield <-#reactive({
-        #input$ # placeholder for reactive trigger
-        dbquery("SELECT 
-                    ROUND(SUM((it.shares_purchased*fp.price-it.amount)*(1-a.tax_rate_percent/100)))
-                 FROM 
-                    investment_transaction it,
-                    account a,
-                    (SELECT * FROM 
-                     fund_prices 
-                     WHERE value_date=(SELECT MAX(value_date) FROM fund_prices)) fp
-                 WHERE 1=1
-                 AND it.fund_id=fp.fund_id
-                 AND it.investment_account_id=a.id")
-    #})
-    output$fund_ov_tot_fund_yield <- shiny::renderText(format(q_fund_ov_tot_fund_yield[1,1], big.mark=" "))
-
-    q_fund_ov_tot_fund_yield_pct <-#reactive({
-        #input$ # placeholder for reactive trigger
-        dbquery("SELECT 
-                    ROUND(AVG(((it.shares_purchased*fp.price-it.amount)*(1-a.tax_rate_percent/100)/DATEDIFF((SELECT MAX(value_date) FROM fund_prices),it.value_date))/it.amount*100*365),2)
-                 FROM 
-                    investment_transaction it,
-                    account a,
-                    (SELECT * FROM fund_prices WHERE value_date=(SELECT MAX(value_date) FROM fund_prices)) fp
-                WHERE 1=1
-                AND it.fund_id=fp.fund_id
-                AND it.investment_account_id=a.id")
-    #})
-    output$fund_ov_tot_fund_yield_pct <- shiny::renderText(q_fund_ov_tot_fund_yield_pct[1,1])
-    
     # List of funds for Fund Investment Overview
     fund_df <- dbquery("SELECT 
                             f.id AS 'Fund ID',
@@ -118,9 +82,7 @@ shinyServer(
     q_adm_acc_reviewtbl <- reactive({
                     input$adm_acc_add_btn
                     dbquery("SELECT id AS 'Account ID', 
-                             account_name AS 'Account Name',
-                             tax_applicable AS 'Tax Applicable',
-                             tax_rate_percent AS 'Tax Rate %'
+                             account_name AS 'Account Name'
                              FROM account a")
     })
     output$adm_acc_reviewtbl <- DT::renderDataTable(
@@ -248,46 +210,38 @@ shinyServer(
     
     # Display existing prices in a data table
     options(digits = 4)
-    q_adm_fundprices_reviewtbl <- reactive({
-        input$adm_fundprices_upl_btn
-        dbquery("SELECT fp.id AS 'Price ID', 
-                        f.fund_name AS 'Fund Name', 
-                        fp.value_date AS 'Value Date', 
-                        fp.price AS 'Price'
-                 FROM fund_prices fp, fund f
-                 WHERE fp.fund_id=f.id
-                 ORDER BY fp.value_date DESC, f.id ASC")
-    })
-    output$adm_fundprices_reviewtbl <- DT::renderDataTable(q_adm_fundprices_reviewtbl(),
+    
+    output$fundprices_full <- DT::renderDataTable(fundprice_df[order(fundprice_df$value_date, decreasing = T),],
                                               options = list(pageLength = 15),
                                               rownames=F)
-    # Load prices file // .xls or .xlsx
-    output$adm_fundprices_upl_file_desc <- renderTable(input$adm_fundprices_upl_file_inp[,-4])
+    # Import prices
+    output$upl_file_desc <- renderTable(input$file_fundprices[,-4])
     
-    observeEvent(input$adm_fundprices_upl_btn, {
+    observeEvent(input$upload_fundprices, {
+        source("f.R")
         library(gdata)
         options(encoding = "iso-8859-2")
-        adm_fundprices_upl_file_inp_df = read.xls(input$adm_fundprices_upl_file_inp[1,4], 
-                                                    sheet = 1, 
-                                                    stringsAsFactors=F)
+        df = read.xls(input$file_fundprices[1,4], 
+                      sheet = 1, 
+                      stringsAsFactors=F)
         
-        df_length <- dim(adm_fundprices_upl_file_inp_df)[1]
-        df_width <- dim(adm_fundprices_upl_file_inp_df)[2]
+        df_length <- dim(df)[1]
+        df_width <- dim(df)[2]
         
-        n_funds <- dim(adm_fundprices_upl_file_inp_df)[2]/3
+        n_funds <- dim(df)[2]/3
         
         price_tbl_pre <- data.frame(date=character(),fund_id=character(),fund_name=character(),price=character())
         
-        date <- adm_fundprices_upl_file_inp_df[2:df_length,1]
+        date <- df[2:df_length,1]
         
         for (i in 1:n_funds){
-            fund_name <- gsub("\\."," ",names(adm_fundprices_upl_file_inp_df)[seq(from = 1, to = df_width, by = 3)][i])
+            fund_name <- gsub("\\."," ",names(df)[seq(from = 1, to = df_width, by = 3)][i])
             fund_id <- dbquery(sprintf("SELECT id as fund_id FROM finapp.fund WHERE fund_name='%s'", fund_name))
             if (nrow(fund_id)==0){
                 price_tbl_pre <- data.frame(date=character(),fund_id=character(),fund_name=character(),price=character())
                 stop(sprintf("Process has been terminated. Unknown fund: %s. Please add first to the fund repository.", fund_name))
             }
-            price <- adm_fundprices_upl_file_inp_df[2:df_length,i*3]
+            price <- df[2:df_length,i*3]
             price_tbl_pre <- rbind(price_tbl_pre,
                                    cbind(date,fund_id,fund_name,price)
             )
@@ -296,13 +250,14 @@ shinyServer(
         dbinsert(price_tbl_pre, "ld_fund_price")
         
         dbquery("INSERT INTO fund_prices (fund_id,value_date,price)
-                    SELECT
-                       CAST(ld.fund_id AS UNSIGNED)
-                       ,CAST(ld.date AS DATE)
-                       ,CAST(ld.price AS DECIMAL(10,6))
-                    FROM ld_fund_price ld LEFT OUTER JOIN fund_prices t 
-                            ON ld.date = t.value_date AND ld.fund_id = t.fund_id
-                    WHERE t.id IS NULL")
+                SELECT
+                CAST(ld.fund_id AS UNSIGNED)
+                ,CAST(ld.date AS DATE)
+                ,CAST(ld.price AS DECIMAL(10,6))
+                FROM ld_fund_price ld LEFT OUTER JOIN fund_prices t 
+                ON ld.date = t.value_date AND
+                ld.fund_id = t.fund_id
+                WHERE t.id IS NULL")
     })
 
     
