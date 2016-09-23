@@ -1,7 +1,28 @@
+library("RPostgreSQL")
+psqlQuery <- function(statement){
+    drv <- dbDriver("PostgreSQL")
+    source("dbcon_details.R", local = T)
+    psqlcon <- dbConnect(drv, dbname = psqldbname,
+                         host = psqldburl, port = psqldbport,
+                         user = psqldbuser, password = psqldbpw)
+    data <- dbGetQuery(psqlcon, statement)
+    data
+}
+psqlInsert <- function(df, tablename){
+    drv <- dbDriver("PostgreSQL")
+    source("dbcon_details.R", local = T)
+    psqlcon <- dbConnect(drv, dbname = psqldbname,
+                         host = psqldburl, port = psqldbport,
+                         user = psqldbuser, password = psqldbpw)
+    dbWriteTable(psqlcon, tablename, 
+                 value = df, append = TRUE, row.names = FALSE)
+}
+
+
 library("RMySQL")
 dbquery <- function(querytext){
             # import db connection details
-            source("dbcon_details.R")
+            source("dbcon_details.R", local = T)
             # establish db connection
             dbcon <- dbConnect(MySQL(),
                                user=dbuser, 
@@ -14,7 +35,7 @@ dbquery <- function(querytext){
             huh <- dbHasCompleted(rs)
             dbClearResult(rs)
             dbDisconnect(dbcon)
-            
+
             data
 }
 
