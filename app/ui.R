@@ -1,26 +1,51 @@
 
+# Initialization: libraries -----------------------------------------------
+
 library(shiny)
 library(shinydashboard)
 library(shinyjs)
 
+# Initialization: sourcing external code ---------------------------------------
+
 source("f.R")
+
+# Initialization: misc setup ----------------------------------------------
 
 options(scipen = 999)
 
-### Preliminary lists
-acc_list <- dbquery("SELECT id FROM account")$id
-names(acc_list) <- dbquery("SELECT account_name FROM account")$account_name
+# Initialization: variables -----------------------------------------------
 
-fund_list <- dbquery("SELECT id FROM fund")$id
-names(fund_list) <- dbquery("SELECT fund_name FROM fund")$fund_name
+fund_inv_ov_periodstart <- psqlQuery("SELECT TO_CHAR(MIN(value_date),'DD Mon YY') FROM fund_investment_transaction")
+fund_inv_ov_periodend <- psqlQuery("SELECT MAX(value_date) FROM fund_price")
 
-ccy_list <- dbquery("SELECT id FROM currency")$id
-names(ccy_list) <- dbquery("SELECT iso_code FROM currency")$iso_code
+# Initialization: dropdown lists ------------------------------------------
 
-### Shiny UI
+acc_list <- psqlQuery("SELECT id FROM account")$id
+names(acc_list) <- psqlQuery("SELECT account_name FROM account")$account_name
+acc_list <- c("please select.."="",acc_list)
+
+fund_list <- psqlQuery("SELECT id FROM fund")$id
+names(fund_list) <- psqlQuery("SELECT fund_name FROM fund")$fund_name
+fund_list <- c("please select.."="",fund_list)
+
+ccy_list <- psqlQuery("SELECT id FROM currency")$id
+names(ccy_list) <- psqlQuery("SELECT iso_code FROM currency")$iso_code
+ccy_list <- c("please select.."="",ccy_list)
+
+# Start of shinyUI() ------------------------------------------------------
+
 shinyUI(
+
+# Start of dashboardPage() ------------------------------------------------
+
     dashboardPage(
+
+# dashboardHeader() -------------------------------------------------------
+
         dashboardHeader(title="FinApp", titleWidth = "270px"),
+
+# dashboardSidebar() ------------------------------------------------------
+
         dashboardSidebar(width = "270px",
             sidebarMenu(
                 menuItem("Home", tabName = "home", icon = icon("home")),
@@ -38,54 +63,90 @@ shinyUI(
                          )
             )
         ),
+
+# start of dashboardBody() ------------------------------------------------
+
         dashboardBody(
+
+# start of tabItems() -----------------------------------------------------
+
             tabItems(
-### Page: Home
+
+# Page: Home --------------------------------------------------------------
+
                 tabItem(tabName = "home",
                         h2("Home tab content")
                 ),
-################################################################################
 
-### Page: Fund Investment Overview
+# Page: Fund Investment Overview ------------------------------------------
+
                 tabItem(tabName = "funds_ov",
                         h2("Fund Investment Overview"),
                         fluidRow(
-                            valueBox(value = textOutput("funds_ov_tot_fund_inv"), 
-                                     "Total Fund Investment (HUF)", 
-                                     icon = icon("money"),
-                                     color = "light-blue"),
-                            valueBox(value = textOutput("fund_ov_tot_fund_yield"),
-                                     "Total Net Yield (HUF)",
-                                     icon = icon("bar-chart"),
-                                     color="green"),
-                            valueBox(value = textOutput("fund_ov_tot_fund_yield_pct"),
-                                     "Annualized Net Yield (%)",
-                                     icon = icon("percent"),
-                                     color="yellow")
+                            column(width=4,
+                                   valueBox(value = textOutput("funds_ov_tot_fund_inv"), 
+                                            "Total Fund Investment (HUF)", 
+                                            icon = icon("money"),
+                                            width = NULL,
+                                            color = "light-blue"),
+                                   infoBox(value = textOutput("funds_ov_avg_fund_inv"), 
+                                           title = sprintf("Average Balance (HUF) since %s",fund_inv_ov_periodstart[1,1]), 
+                                           icon = icon("money"),
+                                           width = NULL,
+                                           color = "light-blue")
+                                   ),
+                            column(width=4,
+                                   valueBox(value = textOutput("fund_ov_tot_fund_net_yield"),
+                                            "Total Net Yield (HUF)",
+                                            icon = icon("bar-chart"),
+                                            width = NULL,
+                                            color="green"),
+                                   infoBox(value = textOutput("fund_ov_tot_fund_gross_yield"), 
+                                           title = "Total Gross Yield (HUF)",
+                                           icon = icon("bar-chart"),
+                                           width = NULL,
+                                           color = "green"),
+                                   infoBox(value = textOutput("fund_ov_eff_taxpct"), 
+                                           title = "Effective Tax Rate (%)",
+                                           icon = icon("percent"),
+                                           width = NULL,
+                                           color = "green")
+                                   ),
+                            column(width=4,
+                                   valueBox(value = textOutput("fund_ov_tot_fund_net_yield_pct"),
+                                            "Annualized Net Yield (%)",
+                                            icon = icon("percent"),
+                                            width = NULL,
+                                            color="yellow"),
+                                   infoBox(value = textOutput("fund_ov_tot_fund_gross_yield_pct"),
+                                            "Annualized Gross Yield (%)",
+                                            icon = icon("percent"),
+                                            width = NULL,
+                                            color="yellow")
+                                   )
                         ),
                         fluidRow(
                             box(DT::dataTableOutput("fundtable"),width = 12, status="primary")
                             )
                 ),
-################################################################################
 
-### Page: Fund Prices
+# Page: Fund Prices -------------------------------------------------------
+
                 tabItem(tabName = "fundprices",
                         h2("Fund Prices"),
                         fluidRow(
                             lapply(1:3, function(i) {uiOutput(paste0('dyn_plot_', i))})
                         )
                 ),
-################################################################################
 
-### Page: Accounts
+# Page: Accounts ----------------------------------------------------------
+
                 tabItem(tabName = "accounts",
                         h2("Accounts tab content")
                 ),
 
-################################################################################
+# Page: Manage Accounts ---------------------------------------------------
 
-### Page: Manage Accounts
                 tabItem(tabName = "adm_acc",
                         shinyjs::useShinyjs(),
                         fluidRow(
@@ -94,6 +155,9 @@ shinyUI(
                                 status = "danger",
                                 width = 4,
                                 textInput("adm_acc_add_name","Account Name"),
+                                selectInput("adm_acc_add_taxappl","Tax Applicable",
+                                            c("please select.."="","Yes"="Y","No"="N")),
+                                textInput("adm_acc_add_taxpercent","Tax Rate %"),
                                 actionButton("adm_acc_add_btn",
                                              "Add", 
                                              icon("plus")),
@@ -107,9 +171,8 @@ shinyUI(
                         )
                 ),
 
-################################################################################
+# Page: Manage Funds ------------------------------------------------------
 
-### Page: Manage Funds
                 tabItem(tabName = "adm_fund",
                         fluidRow(
                             box(title = "Add a fund", 
@@ -131,33 +194,31 @@ shinyUI(
                         )
                 ),
 
-################################################################################
+# Page: Manage Currencies -------------------------------------------------
 
-### Page: Manage Currencies
-tabItem(tabName = "adm_ccy",
-        fluidRow(
-            box(title = "Add a currency", 
-                solidHeader = T,
-                status = "danger",
-                width = 4,
-                textInput("adm_ccy_add_iso","ISO Code"),
-                textInput("adm_ccy_add_desc","Description"),
-                actionButton("adm_ccy_add_btn",
-                             "Add", 
-                             icon("plus")),
-                shinyjs::hidden(
-                    div(id = "adm_ccy_add_confirm",
-                        p("Currency has been added successfully.")
-                    )
-                )
-            ),
-            box(DT::dataTableOutput("adm_ccy_reviewtbl"),width = 8)
-        )
-),
+                tabItem(tabName = "adm_ccy",
+                        fluidRow(
+                            box(title = "Add a currency", 
+                                solidHeader = T,
+                                status = "danger",
+                                width = 4,
+                                textInput("adm_ccy_add_iso","ISO Code"),
+                                textInput("adm_ccy_add_desc","Description"),
+                                actionButton("adm_ccy_add_btn",
+                                             "Add", 
+                                             icon("plus")),
+                                shinyjs::hidden(
+                                    div(id = "adm_ccy_add_confirm",
+                                        p("Currency has been added successfully.")
+                                    )
+                                )
+                            ),
+                            box(DT::dataTableOutput("adm_ccy_reviewtbl"),width = 8)
+                        )
+                ),
 
-################################################################################
+# Page: Manage Investment Transactions ------------------------------------
 
-### Page: Manage Investment Transactions
                 tabItem(tabName = "adm_invtr",
                         fluidRow(
                                 box(title="Add fund investment transaction",
@@ -209,9 +270,9 @@ tabItem(tabName = "adm_ccy",
                                 DT::dataTableOutput("adm_invtr_reviewtbl"))
                         )
                 ),
-################################################################################
 
-### Page: Upload Fund Prices
+# Page: Upload Fund Prices ------------------------------------------------
+
                 tabItem(tabName = "adm_fundprices",
                         h3("Administration - Fund Prices"),
                         fluidRow(
@@ -231,11 +292,23 @@ tabItem(tabName = "adm_ccy",
                             box(DT::dataTableOutput("adm_fundprices_reviewtbl"),width = 12)
                         )
                 )
-################################################################################
+
+# end of tabitems() -------------------------------------------------------
 
             )
+
+# end of dashboardBody() --------------------------------------------------
+
         )
-    )
-    
+
+# end of dashboardPage() --------------------------------------------------
+
 )
+
+# end of shinyUI() --------------------------------------------------------
+
+)
+
+# Others ------------------------------------------------------------------
+
 
