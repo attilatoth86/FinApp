@@ -13,7 +13,7 @@ source("f.R")
 # Initialization: variables -----------------------------------------------
 
 fund_inv_ov_perioddays <- psqlQuery("SELECT
-                                    (SELECT MAX(value_date) FROM fund_price)-
+                                    get_last_fundprice_date()-
                                     (SELECT MIN(value_date) FROM fund_investment_transaction) AS days")
 
 # Initialization: call shinyServer() ---------------------------------------
@@ -25,7 +25,7 @@ shinyServer(
 
     q_funds_ov_tot_fund_inv <-#reactive({
         #input$ # placeholder for reactive trigger
-        psqlQuery("SELECT ROUND(SUM(amount)) FROM fund_investment_transaction")
+        psqlQuery("SELECT ROUND(SUM(tr_value)) FROM fund_investment_transaction_vw")
     #})
     output$funds_ov_tot_fund_inv <- shiny::renderText(format(q_funds_ov_tot_fund_inv[1,1], big.mark=" "))
 
@@ -36,15 +36,15 @@ shinyServer(
                       (
                       SELECT 
                         COALESCE(LEAD(t.value_date) OVER (ORDER BY t.value_date),
-                        (SELECT MAX(value_date) FROM fund_price))-t.value_date w,
+                        get_last_fundprice_date())-t.value_date w,
                         SUM(t.inv_amt) OVER (ORDER BY t.value_date) balance
                       FROM
                           (
                           SELECT 
                             it.value_date,
-                            SUM(it.amount) inv_amt
+                            SUM(it.tr_value) inv_amt
                           FROM
-                            fund_investment_transaction it
+                            fund_investment_transaction_vw it
                           GROUP BY 
                             it.value_date
                           ORDER BY
@@ -57,28 +57,22 @@ shinyServer(
     q_fund_ov_tot_fund_net_yield <-#reactive({
         #input$ # placeholder for reactive trigger
         psqlQuery("SELECT 
-                    ROUND(SUM((it.shares_purchased*fp.price-it.amount)*(1-a.tax_rate_percent/100)))
+                    ROUND(SUM((it.share_amount*fp.price-it.tr_value)*(1-it.tax_rate_percent/100)))
                    FROM 
-                    fund_investment_transaction it,
-                    account a,
-                    (SELECT * FROM 
-                     fund_price
-                     WHERE value_date=(SELECT MAX(value_date) FROM fund_price)) fp
+                    fund_investment_transaction_vw it,
+                    fund_price_recent_vw fp
                    WHERE 1=1
-                    AND it.fund_id=fp.fund_id
-                    AND it.account_id=a.id")
+                    AND it.fund_id=fp.fund_id")
     #})
     output$fund_ov_tot_fund_net_yield <- shiny::renderText(format(q_fund_ov_tot_fund_net_yield[1,1], big.mark=" "))
 
     q_fund_ov_tot_fund_gross_yield <-#reactive({
         #input$ # placeholder for reactive trigger
         psqlQuery("SELECT 
-                  ROUND(SUM(it.shares_purchased*fp.price-it.amount))
+                  ROUND(SUM(it.share_amount*fp.price-it.tr_value))
                   FROM 
-                  fund_investment_transaction it,
-                  (SELECT * FROM 
-                  fund_price
-                  WHERE value_date=(SELECT MAX(value_date) FROM fund_price)) fp
+                  fund_investment_transaction_vw it,
+                  fund_price_recent_vw fp
                   WHERE 1=1
                   AND it.fund_id=fp.fund_id")
     #})
@@ -98,28 +92,25 @@ shinyServer(
     
     # List of funds for Fund Investment Overview
     fund_df <- psqlQuery("SELECT 
-                            f.id AS \"Fund ID\",
-                            f.fund_name AS \"Fund Name\", 
+                            it.fund_id AS \"Fund ID\",
+                            it.fund_name AS \"Fund Name\", 
                             MIN(it.value_date) AS \"Investments Since\", 
-                            SUM(ROUND(CAST(it.amount AS NUMERIC),2)) AS \"Investment Amount\", 
-                            c.iso_code AS \"Currency\", 
-                            SUM(it.shares_purchased) AS \"Number of Shares Purchased\",
-                            SUM(ROUND(CAST(it.shares_purchased*fp.price AS NUMERIC),2)) AS \"Current Value of Investment\",
-                            ROUND(CAST(SUM(it.shares_purchased*fp.price)-SUM(it.amount) AS NUMERIC),2) AS \"Gain/Loss Amount\",
-                            ROUND(CAST((SUM(it.shares_purchased*fp.price)-SUM(it.amount))/SUM(it.amount)*100 AS NUMERIC),2) AS \"Gain/Loss %\"
-                          FROM fund f, 
-                            fund_investment_transaction it, 
-                            currency c,
-                            (SELECT * FROM fund_price WHERE value_date=(SELECT MAX(value_date) FROM fund_price)) fp
+                            SUM(ROUND(CAST(it.tr_value AS NUMERIC),2)) AS \"Investment Amount\", 
+                            it.currency AS \"Currency\", 
+                            SUM(it.share_amount) AS \"Number of Shares Purchased\",
+                            SUM(ROUND(CAST(it.share_amount*fp.price AS NUMERIC),2)) AS \"Current Value of Investment\",
+                            ROUND(CAST(SUM(it.share_amount*fp.price)-SUM(it.tr_value) AS NUMERIC),2) AS \"Gain/Loss Amount\",
+                            ROUND(CAST((SUM(it.share_amount*fp.price)-SUM(it.tr_value))/SUM(it.tr_value)*100 AS NUMERIC),2) AS \"Gain/Loss %\"
+                          FROM
+                            fund_investment_transaction_vw it, 
+                            fund_price_recent_vw fp
                           WHERE 1=1 
-                            AND f.id=it.fund_id
-                            AND it.currency_id=c.id
-                            AND f.id=fp.fund_id
+                            AND it.fund_id=fp.fund_id
                           GROUP BY
-                            f.id,
-                            f.fund_name, 
-                            f.isin, 
-                            c.iso_code
+                            it.fund_id,
+                            it.fund_name, 
+                            it.isin, 
+                            it.currency
                           ORDER BY
                             \"Gain/Loss %\" DESC")
     fund_df$`Investment Amount` <- as.integer(fund_df$`Investment Amount`)
@@ -131,18 +122,29 @@ shinyServer(
 # Page: Funds > Fund Prices -----------------------------------------------
 
     # Query DB fund prices for graphs
-    fundprice_df <- psqlQuery("SELECT f.id, f.fund_name, fp.value_date, fp.price
-                               FROM fund_price fp, fund f
-                               WHERE fp.fund_id=f.id")
+    fundprice_df <- psqlQuery("SELECT f.id, f.fund_name, fp.value_date, fp.price,
+	                                  (fp.price/first_value(price) OVER (PARTITION BY f.id ORDER BY fp.value_date)-1)*100 change_pct
+                              FROM fund_price fp, 
+                                   fund f, 
+                                   (SELECT fund_id, MIN(value_date) min_valdat FROM fund_investment_transaction GROUP BY fund_id) fit
+                              WHERE fp.fund_id=f.id
+                                    AND fp.fund_id=fit.fund_id
+                                    AND fp.value_date>=fit.min_valdat")
     fundprice_df$value_date <- as.Date(fundprice_df$value_date, "%Y-%m-%d")
     fundprice_df$fund_name <- as.factor(fundprice_df$fund_name)
 
+    # Create overall price changes plot
+    output$plot_fp_relative <- renderPlot(
+        ggplot(fundprice_df, 
+               aes(x=value_date,y=change_pct,colour=fund_name)) + 
+               geom_line() + 
+               labs(x="",y="Change %") +
+               theme(legend.title=element_blank())
+        )
+
     # Create dynamic plot rendering
     lapply(fund_df$`Fund ID`, function(i) {
-        data <- fundprice_df[fundprice_df$id==i&
-                                 fundprice_df$value_date>=as.Date(fund_df[fund_df$`Fund ID`==i,]$`Investments Since`, 
-                                                                  "%Y-%m-%d")
-                             ,]
+        data <- fundprice_df[fundprice_df$id==i,]
         output[[paste0("plot_fp_",i)]] <- renderPlot(height = 250,
             ggplot(data, aes(x=value_date,y=price)) + geom_line() + labs(x="",y="")
         )        
@@ -244,27 +246,80 @@ shinyServer(
         shinyjs::show("adm_ccy_add_confirm")
     })
 
+# Page: Administration > Manage deposits ----------------------------------
+
+    # Retrieve existing deposits in a data table
+    q_adm_depo_reviewtbl <- reactive({
+        input$adm_depo_add_btn
+        psqlQuery("SELECT d.id AS \"Deposit ID\",
+                          a.account_name AS \"Account Name\",
+                          d.value_date AS \"Value Date\",
+                          d.maturity_date AS \"Maturity Date\",
+                          d.amount AS \"Amount\",
+                          c.iso_code AS \"Currency\",
+                          d.interest_rate AS \"Interest Rate\",
+                          d.interest_rate_type AS \"Interest Rate Type\",
+                          d.interest_rate_spread as \"Interest Rate Spread\"
+                   FROM deposit d,
+                        account a,
+                        currency c
+                   WHERE 1=1
+                        AND d.account_id=a.id
+                        AND d.currency_id=c.id
+                   ORDER BY d.value_date DESC, d.id DESC")
+    })
+    output$adm_depo_reviewtbl <- DT::renderDataTable(
+        q_adm_depo_reviewtbl(),
+        options = list(searching=F, paging=T),
+        rownames=F)
+
+    # Insert new deposit
+    observeEvent(input$adm_depo_add_btn, {
+        psqlQuery(sprintf("INSERT INTO deposit (account_id,
+                                                value_date,
+                                                amount,
+                                                maturity_date,
+                                                currency_id,
+                                                interest_rate,
+                                                interest_rate_type,
+                                                interest_rate_spread
+                                                )
+                          VALUES('%i', '%s', '%f', '%s', '%i', '%f','%s','%f');"
+                          ,as.numeric(input$adm_depo_add_targ_acc)
+                          ,input$adm_depo_add_valdate
+                          ,as.numeric(input$adm_depo_add_amt)
+                          ,input$adm_depo_add_matdate
+                          ,as.numeric(input$adm_depo_add_ccy)
+                          ,as.numeric(input$adm_depo_add_intrate)
+                          ,input$adm_depo_add_intratetyp
+                          ,as.numeric(input$adm_depo_add_intratespread)))
+        shinyjs::reset("adm_depo_add_targ_acc")
+        shinyjs::reset("adm_depo_add_valdate")
+        shinyjs::reset("adm_depo_add_amt")
+        shinyjs::reset("adm_depo_add_matdate")
+        shinyjs::reset("adm_depo_add_ccy")
+        shinyjs::reset("adm_depo_add_intrate")
+        shinyjs::reset("adm_depo_add_intratetyp")
+        shinyjs::reset("adm_depo_add_intratespread")
+        shinyjs::show("adm_depo_add_confirm")
+    })
+    
+    
 # Page: Administration > Manage investment transactions -------------------
 
     # Display existing transactions in a data table
     q_adm_invtr_reviewtbl <- reactive({
         input$adm_invtr_add_btn
+        input$adm_fundprices_upl_btn
         psqlQuery("SELECT 
                     it.value_date AS \"Value Date\",
-                    it.amount AS \"Transaction Amount\",
-                    c.iso_code AS \"Currency\",
-                    it.shares_purchased AS \"No of Purchased Shares\",
-                    a.account_name AS \"Target Account\",
-                    f.fund_name AS \"Puchased Fund\"
+                    it.currency AS \"Currency\",
+                    it.share_amount AS \"No of Purchased Shares\",
+                    ROUND(it.tr_value) AS \"Transaction Value\",
+                    it.account_name AS \"Target Account\",
+                    it.fund_name AS \"Puchased Fund\"
                    FROM 
-                    fund_investment_transaction it,
-                    currency c,
-                    account a,
-                    fund f
-                   WHERE 1=1
-                    AND it.currency_id=c.id
-                    AND it.account_id=a.id
-                    AND it.fund_id=f.id
+                    fund_investment_transaction_vw it
                    ORDER BY
                     it.value_date DESC")
     })
@@ -277,14 +332,12 @@ shinyServer(
         psqlQuery(sprintf("INSERT INTO fund_investment_transaction 
                                         (value_date, 
                                         currency_id,
-                                        amount,
-                                        shares_purchased,
+                                        share_amount,
                                         account_id,
                                         fund_id)
-                          VALUES('%s', '%i', %f, %i, %i, %i);"
+                          VALUES('%s', '%i', %i, %i, %i);"
                           ,input$adm_invtr_add_valdate
                           ,as.numeric(input$adm_invtr_add_ccy)
-                          ,as.numeric(input$adm_invtr_add_tramt)
                           ,as.numeric(input$adm_invtr_add_noshares)
                           ,as.numeric(input$adm_invtr_add_targ_acc)
                           ,as.numeric(input$adm_invtr_add_fund)

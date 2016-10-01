@@ -17,6 +17,7 @@ options(scipen = 999)
 
 fund_inv_ov_periodstart <- psqlQuery("SELECT TO_CHAR(MIN(value_date),'DD Mon YY') FROM fund_investment_transaction")
 fund_inv_ov_periodend <- psqlQuery("SELECT MAX(value_date) FROM fund_price")
+fund_ids <- psqlQuery("SELECT DISTINCT fund_id FROM fund_investment_transaction ORDER BY fund_id ASC")
 
 # Initialization: dropdown lists ------------------------------------------
 
@@ -58,6 +59,7 @@ shinyUI(
                             menuSubItem("Manage accounts", tabName = "adm_acc"),
                             menuSubItem("Manage funds", tabName = "adm_fund"),
                             menuSubItem("Manage currencies", tabName = "adm_ccy"),
+                            menuSubItem("Manage deposits", tabName = "adm_depo"),
                             menuSubItem("Manage fund investment transactions", tabName = "adm_invtr"),
                             menuSubItem("Upload fund prices", tabName = "adm_fundprices")
                          )
@@ -135,7 +137,14 @@ shinyUI(
                 tabItem(tabName = "fundprices",
                         h2("Fund Prices"),
                         fluidRow(
-                            lapply(1:3, function(i) {uiOutput(paste0('dyn_plot_', i))})
+                            box(plotOutput("plot_fp_relative"),
+                                title="Relative Price Changes",
+                                width = 12, 
+                                status = "primary",
+                                solidHeader = T)
+                                 ),
+                        fluidRow(
+                            lapply(fund_ids[,1], function(i) {uiOutput(paste0('dyn_plot_', i))})
                         )
                 ),
 
@@ -198,7 +207,7 @@ shinyUI(
 
                 tabItem(tabName = "adm_ccy",
                         fluidRow(
-                            box(title = "Add a currency", 
+                            box(title = "Add currency", 
                                 solidHeader = T,
                                 status = "danger",
                                 width = 4,
@@ -215,6 +224,51 @@ shinyUI(
                             ),
                             box(DT::dataTableOutput("adm_ccy_reviewtbl"),width = 8)
                         )
+                ),
+
+# Page: Manage Deposits ---------------------------------------------------
+
+                tabItem(tabName = "adm_depo",
+                        fluidRow(
+                            box(title = "Add deposit",
+                                width = 12,
+                                solidHeader = T,
+                                status = "danger",
+                                column(width = 4,
+                                       selectInput("adm_depo_add_targ_acc","Target Account",
+                                                   acc_list),
+                                       selectInput("adm_depo_add_ccy","Currency",
+                                                   ccy_list),
+                                       selectInput("adm_depo_add_intratetyp","Interest Rate Type",
+                                                   c("please select.."="",
+                                                     "Fixed"="fixed",
+                                                     "Variable"="variable")),
+                                       actionButton("adm_depo_add_btn",
+                                                    "Add", 
+                                                    icon("plus")),
+                                       shinyjs::hidden(
+                                           div(id = "adm_depo_add_confirm",
+                                               p("Deposit has been added successfully.")
+                                           )
+                                       )
+                                       ),
+                                column(width = 4,
+                                       dateInput("adm_depo_add_valdate","Value Date", format = "yyyy-mm-dd"),
+                                       dateInput("adm_depo_add_matdate","Maturity Date", format = "yyyy-mm-dd")
+                                       ),
+                                column(width = 4,
+                                       textInput("adm_depo_add_amt","Amount"),
+                                       textInput("adm_depo_add_intrate","Interest Rate"),
+                                       textInput("adm_depo_add_intratespread","Interest Rate Spread")
+                                       )
+                            )
+                        ),
+                        fluidRow(box(title="Review deposits",
+                                     solidHeader = T,
+                                     status = "primary",
+                                     width = 12,
+                                     DT::dataTableOutput("adm_depo_reviewtbl")))
+                    
                 ),
 
 # Page: Manage Investment Transactions ------------------------------------
@@ -237,13 +291,11 @@ shinyUI(
                                                            ccy_list))   
                                     ),
                                     fluidRow(
-                                        column(width=3,
+                                        column(width=4,
                                                dateInput("adm_invtr_add_valdate","Value Date", format = "yyyy-mm-dd")),
-                                        column(width=3,
-                                               textInput("adm_invtr_add_tramt","Transaction Amount")),
-                                        column(width=3,
+                                        column(width=4,
                                                textInput("adm_invtr_add_noshares","No of Purchased Share")),
-                                        column(width=3,
+                                        column(width=4,
                                                    actionButton("adm_invtr_add_btn",
                                                                 "Enter transaction", 
                                                                 icon("plus"))
