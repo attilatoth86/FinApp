@@ -172,29 +172,27 @@ server <- function(input, output, session) {
     })
     
     # Create plot: relative price changes
-    output$plot_fp_relative <- renderPlot(
-        # ggplot(q_adm_fundprices_df()$output, 
-        #        aes(x=value_date,y=change_pct,colour=fund_name)) + 
-        #     geom_line() + 
-        #     labs(x="",y="Change %") +
-        #     theme(legend.title=element_blank())
-        plot_ly(q_adm_fundprices_df()$output, x=~value_date) %>%
-            add_trace(y = ~change_pct, name = 'change pct',mode = 'lines')
-    )
+    output$plot_fp_relative <- renderPlotly(
+        plot_ly(data=q_adm_fundprices_df()$output, 
+                x=~value_date, 
+                y=~change_pct, 
+                color = ~fund_name, 
+                mode="lines") %>%
+            layout(xaxis=list(title=""), yaxis=list(title="Price Change %"))
+            )
     
     # Create dynamic plot rendering
     lapply(fund_df$`Fund ID`, function(i) {
         df <- isolate(q_adm_fundprices_df()$output)
         data <- df[df$id==i,]
-        output[[paste0("plot_fp_",i)]] <- renderPlot(height = 250,
-                                                     ggplot(data, aes(x=value_date,y=price)) + geom_line() + labs(x="",y="")
-        )        
+        output[[paste0("plot_fp_",i)]] <- renderPlotly(
+            plot_ly(data=data, x=~value_date, y=~price, mode="lines") %>%
+                layout(xaxis=list(title=""), yaxis=list(title=""))
+            )
         output[[paste0("dyn_plot_",i)]] <- renderUI({
-            box(title=fund_df$`Fund Name`[fund_df$`Fund ID`==i],
-                plotOutput(paste0("plot_fp_",i)),
+            box(fund_df$`Fund Name`[fund_df$`Fund ID`==i],
+                plotlyOutput(paste0("plot_fp_",i)),
                 width = 6, 
-                height = 315,
-                status = "warning",
                 solidHeader = T)
         })        
     })
@@ -221,16 +219,28 @@ server <- function(input, output, session) {
     
     # Insert new account
     observeEvent(input$adm_acc_add_btn, {
-        psqlQuery(sprintf("INSERT INTO account (account_name, 
-                          tax_applicable, 
-                          tax_rate_percent)
-                          VALUES('%s', '%s', %f);",input$adm_acc_add_name
-                          ,input$adm_acc_add_taxappl
-                          ,as.numeric(input$adm_acc_add_taxpercent)))$result
+        adm_acc_add_btn_queryOut <- psqlQuery(sprintf("INSERT INTO account (account_name, 
+                                                      tax_applicable, 
+                                                      tax_rate_percent)
+                                                      VALUES('%s', '%s', %f);",input$adm_acc_add_name
+                                                      ,input$adm_acc_add_taxappl
+                                                      ,as.numeric(input$adm_acc_add_taxpercent)
+                                                      )
+                                              )
         shinyjs::reset("adm_acc_add_name")
         shinyjs::reset("adm_acc_add_taxappl")
         shinyjs::reset("adm_acc_add_taxpercent")
-        shinyjs::show("adm_acc_add_confirm")
+        shinyjs::hide("adm_acc_add_confirm")
+        shinyjs::hide("adm_acc_add_error")
+        
+        if(adm_acc_add_btn_queryOut$errorMsg=="OK"){
+            shinyjs::show("adm_acc_add_confirm", anim = T, animType = "fade", time = 1)
+        }
+        else {
+            output$adm_acc_add_error_txt <- renderText(adm_acc_add_btn_queryOut$errorMsg)
+            shinyjs::show("adm_acc_add_error", anim = T, animType = "fade", time = 1)
+        }
+
     })
 
 # SERVERCOMPONENT: Administration > Manage funds -------------------------------------
@@ -319,24 +329,25 @@ server <- function(input, output, session) {
     
     # Insert new deposit
     observeEvent(input$adm_depo_add_btn, {
-        psqlQuery(sprintf("INSERT INTO deposit (account_id,
-                          value_date,
-                          amount,
-                          maturity_date,
-                          currency_id,
-                          interest_rate,
-                          interest_rate_type,
-                          interest_rate_spread
-        )
-                          VALUES('%i', '%s', '%f', '%s', '%i', '%f','%s','%f');"
-                          ,as.numeric(input$adm_depo_add_targ_acc)
-                          ,input$adm_depo_add_valdate
-                          ,as.numeric(input$adm_depo_add_amt)
-                          ,input$adm_depo_add_matdate
-                          ,as.numeric(input$adm_depo_add_ccy)
-                          ,as.numeric(input$adm_depo_add_intrate)
-                          ,input$adm_depo_add_intratetyp
-                          ,as.numeric(input$adm_depo_add_intratespread)))$result
+        adm_depo_add_btn_queryOut <- psqlQuery(sprintf("INSERT INTO deposit (account_id,
+                                                        value_date,
+                                                        amount,
+                                                        maturity_date,
+                                                        currency_id,
+                                                        interest_rate,
+                                                        interest_rate_type,
+                                                        interest_rate_spread)
+                                                        VALUES('%i', '%s', '%f', '%s', '%i', '%f','%s','%f');"
+                                                        ,as.numeric(input$adm_depo_add_targ_acc)
+                                                        ,input$adm_depo_add_valdate
+                                                        ,as.numeric(input$adm_depo_add_amt)
+                                                        ,input$adm_depo_add_matdate
+                                                        ,as.numeric(input$adm_depo_add_ccy)
+                                                        ,as.numeric(input$adm_depo_add_intrate)
+                                                        ,input$adm_depo_add_intratetyp
+                                                        ,as.numeric(input$adm_depo_add_intratespread)
+                                                            )
+                                                       )
         shinyjs::reset("adm_depo_add_targ_acc")
         shinyjs::reset("adm_depo_add_valdate")
         shinyjs::reset("adm_depo_add_amt")
@@ -345,7 +356,17 @@ server <- function(input, output, session) {
         shinyjs::reset("adm_depo_add_intrate")
         shinyjs::reset("adm_depo_add_intratetyp")
         shinyjs::reset("adm_depo_add_intratespread")
-        shinyjs::show("adm_depo_add_confirm")
+        shinyjs::hide("adm_depo_add_confirm")
+        shinyjs::hide("adm_depo_add_error")
+        
+        if(adm_depo_add_btn_queryOut$errorMsg=="OK"){
+            shinyjs::show("adm_depo_add_confirm", anim = T, animType = "fade", time = 1)
+        }
+        else {
+            output$adm_depo_add_error_txt <- renderText(adm_depo_add_btn_queryOut$errorMsg)
+            shinyjs::show("adm_depo_add_error", anim = T, animType = "fade", time = 1)
+        }
+        
     })
 
 # SERVERCOMPONENT: Administration > Manage rates -------------------------------------
@@ -365,21 +386,27 @@ server <- function(input, output, session) {
         rownames=F)
     
     observeEvent(input$adm_rate_add_btn,{
-        adm_rate_add_queryOut <- psqlQuery(sprintf("INSERT INTO rate 
+        adm_rate_add_btn_queryOut <- psqlQuery(sprintf("INSERT INTO rate 
                                                    (rate_name, 
                                                    rate_type)
                                                    VALUES ('%s','%s');",
                                                    input$adm_rate_add_ratename,
                                                    input$adm_rate_add_ratetype
-        ))
-        if(adm_rate_add_queryOut$errorMsg=="OK"){
-            adm_rate_confirm_msg <- paste0(input$adm_rate_add_ratename," rate added successfully.")
+                                                   )
+                                           )
+
+        shinyjs::reset("adm_rate_add_ratename")
+        shinyjs::reset("adm_rate_add_ratetype")
+        shinyjs::hide("adm_rate_add_confirm")
+        shinyjs::hide("adm_rate_add_error")
+
+        if(adm_rate_add_btn_queryOut$errorMsg=="OK"){
+            shinyjs::show("adm_rate_add_confirm", anim = T, animType = "fade", time = 1)
         }
         else {
-            adm_rate_confirm_msg <- adm_rate_add_queryOut$errorMsg
+            output$adm_rate_add_error_txt <- renderText(adm_rate_add_btn_queryOut$errorMsg)
+            shinyjs::show("adm_rate_add_error", anim = T, animType = "fade", time = 1)
         }
-        output$adm_rate_add_confirm <- renderText(adm_rate_confirm_msg)
-        shinyjs::show("adm_rate_confirm")
     })
 
 # SERVERCOMPONENT: Administration > Manage investment transactions -------------------
@@ -556,6 +583,7 @@ ui <- dashboardPage(
 # UI: dashboardSidebar() ------------------------------------------------------
     
     dashboardSidebar(width = "270px",
+                     shinyjs::useShinyjs(),
                      sidebarMenu(
                          menuItem("Home", tabName = "home", icon = icon("home")),
                          menuItem("Funds",tabName = NULL, icon = icon("line-chart"),
@@ -657,16 +685,22 @@ ui <- dashboardPage(
             tabItem(tabName = "fundprices",
                     h2("Funds", tags$small("Prices")),
                     fluidRow(
-                        box(plotOutput("plot_fp_relative"),
+                        box(plotlyOutput("plot_fp_relative"),
                             title="Relative Price Changes",
-                            width = 12, 
-                            status = "primary",
-                            solidHeader = T)
+                            width = 12,
+                            status = "primary")
                     ),
                     fluidRow(
-                        lapply(fund_ids[,1], function(i) {
-                            uiOutput(paste0('dyn_plot_', i))
-                        })
+                        box(title="Individual Fund Price Charts",
+                            solidHeader = T,
+                            width=12,
+                            "Charts below depict price development for each
+                                funds since the dates of first investments.",
+                            br(),br(),
+                            lapply(fund_ids[,1], function(i) {
+                                uiOutput(paste0('dyn_plot_', i))
+                            })
+                            )
                     )
             ),
 
@@ -679,44 +713,59 @@ ui <- dashboardPage(
 # UI: Macro > FX Rates --------------------------------------------------
             
             tabItem(tabName = "macro_fx",
-                    h2("FX Rate tab content")
+                    h2("Macroeconomic Factors", tags$small("FX Rates"))
             ),
 
 # UI: Macro > Interest Rates --------------------------------------------
             
             tabItem(tabName = "macro_ir",
-                    h2("Interest Rates tab content")
+                    h2("Macroeconomic Factors", tags$small("Interest Rates"))
             ),
 
 # UI: Administration > Manage Accounts ---------------------------------------------------
             
             tabItem(tabName = "adm_acc",
-                    shinyjs::useShinyjs(),
+                    h2("Administration", tags$small("Manage accounts")),
                     fluidRow(
-                        box(title = "Add an account", 
-                            solidHeader = T,
-                            status = "danger",
-                            width = 4,
-                            textInput("adm_acc_add_name","Account Name"),
-                            selectInput("adm_acc_add_taxappl","Tax Applicable",
-                                        c("please select.."="","Yes"="Y","No"="N")),
-                            textInput("adm_acc_add_taxpercent","Tax Rate %"),
-                            actionButton("adm_acc_add_btn",
-                                         "Add", 
-                                         icon("plus")),
-                            shinyjs::hidden(
-                                div(id = "adm_acc_add_confirm",
-                                    p("Account has been added successfully.")
+                        column(width = 3,
+                               box(title = "Add an account", 
+                                   width=NULL,
+                                   solidHeader = T,
+                                   status = "danger",
+                                   textInput("adm_acc_add_name","Account Name"),
+                                   selectInput("adm_acc_add_taxappl","Tax Applicable",
+                                               c("please select.."="","Yes"="Y","No"="N")),
+                                   textInput("adm_acc_add_taxpercent","Tax Rate %"),
+                                   actionButton("adm_acc_add_btn",
+                                                "Add", 
+                                                icon("plus"))
+                                ),
+                               shinyjs::hidden(
+                                   div(id="adm_acc_add_confirm",
+                                       class="alert alert-success",
+                                       role="alert",
+                                       tags$b(icon("check"), "Account has been added successfully."))
+                                ),
+                               shinyjs::hidden(
+                                   div(id="adm_acc_add_error",
+                                       class="alert alert-danger",
+                                       role="alert",
+                                       h4(icon("exclamation"), "Error"),
+                                       p(textOutput("adm_acc_add_error_txt"))
+                                       )
                                 )
-                            )
-                        ),
-                        box(DT::dataTableOutput("adm_acc_reviewtbl"),width = 8)
+                              ),
+                        column(width=9,
+                               box(DT::dataTableOutput("adm_acc_reviewtbl"),
+                                   width=NULL)
+                               )
                     )
             ),
 
 # UI: Administration > Manage Funds ------------------------------------------------------
             
             tabItem(tabName = "adm_fund",
+                    h2("Administration", tags$small("Manage funds")),
                     fluidRow(
                         box(title = "Add a fund", 
                             solidHeader = T,
@@ -741,6 +790,7 @@ ui <- dashboardPage(
 # UI: Administration > Manage Currencies -------------------------------------------------
             
             tabItem(tabName = "adm_ccy",
+                    h2("Administration", tags$small("Manage currencies")),
                     fluidRow(
                         box(title = "Add currency", 
                             solidHeader = T,
@@ -765,6 +815,7 @@ ui <- dashboardPage(
 # UI: Administration > Manage Deposits ---------------------------------------------------
             
             tabItem(tabName = "adm_depo",
+                    h2("Administration", tags$small("Manage deposits")),
                     fluidRow(
                         box(title = "Add deposit",
                             width = 12,
@@ -783,12 +834,7 @@ ui <- dashboardPage(
                                                  "Variable"="variable")),
                                    actionButton("adm_depo_add_btn",
                                                 "Add", 
-                                                icon("plus")),
-                                   shinyjs::hidden(
-                                       div(id = "adm_depo_add_confirm",
-                                           p("Deposit has been added successfully.")
-                                       )
-                                   )
+                                                icon("plus"))
                             ),
                             column(width = 4,
                                    dateInput("adm_depo_add_valdate",
@@ -808,6 +854,24 @@ ui <- dashboardPage(
                             )
                         )
                     ),
+                    fluidRow(
+                        column(width = 12,
+                            shinyjs::hidden(
+                                div(id="adm_depo_add_confirm",
+                                    class="alert alert-success",
+                                    role="alert",
+                                    tags$b(icon("check"), "Deposit has been added successfully."))
+                            ),
+                            shinyjs::hidden(
+                                div(id="adm_depo_add_error",
+                                    class="alert alert-danger",
+                                    role="alert",
+                                    h4(icon("exclamation"), "Error"),
+                                    p(textOutput("adm_depo_add_error_txt"))
+                                )
+                            )  
+                        )
+                    ),
                     fluidRow(box(title="Review deposits",
                                  solidHeader = T,
                                  status = "primary",
@@ -819,50 +883,48 @@ ui <- dashboardPage(
 # UI: Administration > Manage Rates ------------------------------------------------------
             
             tabItem(tabName = "adm_rate",
-                    h2("Administration Rate"),
-                    fluidRow(box(title = "Add rate",
-                                 width = 12,
-                                 status = "danger",
-                                 solidHeader = T,
-                                 column(width=4,
-                                        textInput("adm_rate_add_ratename",
-                                                  "Rate Name")),
-                                 column(width=4,
-                                        selectInput("adm_rate_add_ratetype",
-                                                    "Rate Type",
-                                                    c("please select.."="",
-                                                      "Interest Rate"="interest",
-                                                      "FX Rate"="FX"))),
-                                 column(width=4,
-                                        actionButton("adm_rate_add_btn",
-                                                     "Add",
-                                                     class="btn-danger",
-                                                     style="color:#fff",
-                                                     icon("plus")),
-                                        tags$style(type='text/css', 
-                                                   "#adm_rate_add_btn {margin-top: 25px;}"))
-                    ),
-                    shinyjs::hidden(
-                        div(id="adm_rate_confirm",
-                            box(status = "danger",
-                                width = 12,
-                                solidHeader = T,
-                                textOutput("adm_rate_add_confirm")
-                            )    
+                    h2("Administration", tags$small("Manage rates")),
+                    fluidRow(
+                        column(width = 3,
+                               box(title = "Add rate",
+                                   width = NULL,
+                                   status = "danger",
+                                   solidHeader = T,
+                                   textInput("adm_rate_add_ratename","Rate Name"),
+                                   selectInput("adm_rate_add_ratetype","Rate Type",
+                                              c("please select.."="",
+                                                "Interest Rate"="interest",
+                                                "FX Rate"="FX")),
+                                   actionButton("adm_rate_add_btn","Add",icon("plus"))
+                                   ),
+                               shinyjs::hidden(
+                                   div(id="adm_rate_add_confirm",
+                                       class="alert alert-success",
+                                       role="alert",
+                                       tags$b(icon("check"), "Rate has been added successfully."))
+                                ),
+                               shinyjs::hidden(
+                                   div(id="adm_rate_add_error",
+                                       class="alert alert-danger",
+                                       role="alert",
+                                       h4(icon("exclamation"), "Error"),
+                                       p(textOutput("adm_rate_add_error_txt"))
+                                   )
+                                )
+                               ),
+                        column(width = 9,
+                               box(title="Review rates",
+                                   solidHeader = T,
+                                   status = "primary",
+                                   width=12,
+                                   DT::dataTableOutput("adm_rate_reviewtbl")))
                         )
-                        
-                    )
-                    ),
-                    fluidRow(box(title="Review rates",
-                                 solidHeader = T,
-                                 status = "primary",
-                                 width=12,
-                                 DT::dataTableOutput("adm_rate_reviewtbl")))
             ),
 
 # UI: Administration > Manage Investment Transactions ------------------------------------
             
             tabItem(tabName = "adm_invtr",
+                    h2("Administration", tags$small("Manage fund investment transactions")),
                     fluidRow(
                         box(title="Add fund investment transaction",
                             solidHeader = T,
@@ -922,7 +984,7 @@ ui <- dashboardPage(
 # UI: Administration > Upload Fund Prices ------------------------------------------------
             
             tabItem(tabName = "adm_fundprices",
-                    h3("Administration - Fund Prices"),
+                    h2("Administration", tags$small("Upload fund prices")),
                     fluidRow(
                         box(title="Fund Price Bulk Upload", 
                             solidHeader = T,
@@ -948,11 +1010,19 @@ ui <- dashboardPage(
 # UI: Administration > Manage FX rates ---------------------------------------------------
             
             tabItem(tabName = "adm_fxrates",
-                    h3("Administration - FX Rates"),
+                    h2("Administration", tags$small("Manage FX rates")),
                     fluidRow(
                         box(title="Import FX rates", width = 12,
                             solidHeader = T,
                             status = "danger",
+                            p("This module imports historical FX rates of HUF and 
+                              various currency pairs from the official",
+                              tags$a(href="http://mnb.hu/en/arfolyam-lekerdezes", "website"),
+                              "of Hungarian National Bank. (MNB)"),
+                            p("MNB currently quotes official central bank rates 
+                              for the following currencies only:",br(),"AUD, BGN, BRL, CAD, CHF, CNY, 
+CZK, DKK, EUR, GBP, HKD, HRK, IDR, ILS, INR, ISK, JPY, KRW, MXN, MYR, NOK, NZD, PHP, PLN, RON, RSD, RUB, SEK,
+SGD, THB, TRY, UAH, USD, ZAR."),
                             column(width=3,
                                    dateInput("adm_fxrates_imp_datefrom",
                                              "Date From", 
@@ -970,8 +1040,8 @@ ui <- dashboardPage(
                             ),
                             column(width=3,
                                    actionButton("adm_fxrates_imp_btn",
-                                                "Import",
-                                                icon("database")
+                                                "Download",
+                                                icon("cloud-download")
                                    ),
                                    tags$style(type='text/css', 
                                               "#adm_fxrates_imp_btn {margin-top: 25px;}")
