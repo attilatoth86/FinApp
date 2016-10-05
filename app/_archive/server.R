@@ -5,6 +5,8 @@ library(shiny)
 library(shinydashboard)
 library(DT)
 library(ggplot2)
+library(RCurl)
+library(XML)
 
 # Initialization: sourcing external code ---------------------------------
 
@@ -14,7 +16,7 @@ source("f.R")
 
 fund_inv_ov_perioddays <- psqlQuery("SELECT
                                     get_last_fundprice_date()-
-                                    (SELECT MIN(value_date) FROM fund_investment_transaction) AS days")
+                                    (SELECT MIN(value_date) FROM fund_investment_transaction) AS days")$result
 
 # Initialization: call shinyServer() ---------------------------------------
 
@@ -25,7 +27,7 @@ shinyServer(
 
     q_funds_ov_tot_fund_inv <-#reactive({
         #input$ # placeholder for reactive trigger
-        psqlQuery("SELECT ROUND(SUM(tr_value)) FROM fund_investment_transaction_vw")
+        psqlQuery("SELECT ROUND(SUM(tr_value)) FROM fund_investment_transaction_vw")$result
     #})
     output$funds_ov_tot_fund_inv <- shiny::renderText(format(q_funds_ov_tot_fund_inv[1,1], big.mark=" "))
 
@@ -50,7 +52,7 @@ shinyServer(
                           ORDER BY
                             it.value_date
                           ) t
-                      ) tt")
+                      ) tt")$result
     #})
     output$funds_ov_avg_fund_inv <- shiny::renderText(format(q_funds_ov_avg_fund_inv[1,1], big.mark=" "))
     
@@ -62,7 +64,7 @@ shinyServer(
                     fund_investment_transaction_vw it,
                     fund_price_recent_vw fp
                    WHERE 1=1
-                    AND it.fund_id=fp.fund_id")
+                    AND it.fund_id=fp.fund_id")$result
     #})
     output$fund_ov_tot_fund_net_yield <- shiny::renderText(format(q_fund_ov_tot_fund_net_yield[1,1], big.mark=" "))
 
@@ -74,7 +76,7 @@ shinyServer(
                   fund_investment_transaction_vw it,
                   fund_price_recent_vw fp
                   WHERE 1=1
-                  AND it.fund_id=fp.fund_id")
+                  AND it.fund_id=fp.fund_id")$result
     #})
     output$fund_ov_tot_fund_gross_yield <- shiny::renderText(format(q_fund_ov_tot_fund_gross_yield[1,1], big.mark=" "))
 
@@ -112,7 +114,7 @@ shinyServer(
                             it.isin, 
                             it.currency
                           ORDER BY
-                            \"Gain/Loss %\" DESC")
+                            \"Gain/Loss %\" DESC")$result
     fund_df$`Investment Amount` <- as.integer(fund_df$`Investment Amount`)
     fund_df$`Number of Shares Purchased` <- as.integer(fund_df$`Number of Shares Purchased`)
     output$fundtable <- DT::renderDataTable(fund_df[,-1],
@@ -129,7 +131,7 @@ shinyServer(
                                    (SELECT fund_id, MIN(value_date) min_valdat FROM fund_investment_transaction GROUP BY fund_id) fit
                               WHERE fp.fund_id=f.id
                                     AND fp.fund_id=fit.fund_id
-                                    AND fp.value_date>=fit.min_valdat")
+                                    AND fp.value_date>=fit.min_valdat")$result
     fundprice_df$value_date <- as.Date(fundprice_df$value_date, "%Y-%m-%d")
     fundprice_df$fund_name <- as.factor(fundprice_df$fund_name)
 
@@ -158,6 +160,10 @@ shinyServer(
         })        
     })
 
+# Page: Macro > FX Rates --------------------------------------------------
+
+### placeholder
+
 # Page: Administration > Manage accounts ----------------------------------
 
     # Retrieve existing accounts in a data table
@@ -167,7 +173,7 @@ shinyServer(
                                account_name AS \"Account Name\",
                                tax_applicable AS \"Tax Applicable\",
                                tax_rate_percent AS \"Tax Rate %\"
-                               FROM account a")
+                               FROM account a")$result
     })
     output$adm_acc_reviewtbl <- DT::renderDataTable(
         q_adm_acc_reviewtbl(),
@@ -181,13 +187,12 @@ shinyServer(
                                                     tax_rate_percent)
                                             VALUES('%s', '%s', %f);",input$adm_acc_add_name
                                                                     ,input$adm_acc_add_taxappl
-                                                                    ,as.numeric(input$adm_acc_add_taxpercent)))
+                                                                    ,as.numeric(input$adm_acc_add_taxpercent)))$result
             shinyjs::reset("adm_acc_add_name")
             shinyjs::reset("adm_acc_add_taxappl")
             shinyjs::reset("adm_acc_add_taxpercent")
             shinyjs::show("adm_acc_add_confirm")
-
-    })
+            })
 
 # Page: Administration > Manage funds -------------------------------------
 
@@ -198,7 +203,7 @@ shinyServer(
                           fund_name AS \"Fund Name\",
                           isin AS \"ISIN\"
                   FROM fund
-                  ORDER BY id")
+                  ORDER BY id")$result
     })
     output$adm_fund_reviewtbl <- DT::renderDataTable(
         q_adm_fund_reviewtbl(),
@@ -211,7 +216,7 @@ shinyServer(
                                              isin)
                           VALUES('%s', '%s');"
                           ,input$adm_fund_add_name
-                          ,input$adm_fund_add_isin))
+                          ,input$adm_fund_add_isin))$result
         shinyjs::reset("adm_fund_add_name")
         shinyjs::reset("adm_fund_add_isin")
         shinyjs::show("adm_fund_add_confirm")
@@ -227,7 +232,7 @@ shinyServer(
                           iso_code AS \"ISO Code\",
                           description AS \"Description\"
                    FROM currency
-                   ORDER BY id")
+                   ORDER BY id")$result
     })
     output$adm_ccy_reviewtbl <- DT::renderDataTable(
         q_adm_ccy_reviewtbl(),
@@ -240,7 +245,7 @@ shinyServer(
                                                      description)
                           VALUES('%s', '%s');"
                           ,input$adm_ccy_add_iso
-                          ,input$adm_ccy_add_desc))
+                          ,input$adm_ccy_add_desc))$result
         shinyjs::reset("adm_ccy_add_iso")
         shinyjs::reset("adm_ccy_add_desc")
         shinyjs::show("adm_ccy_add_confirm")
@@ -266,7 +271,7 @@ shinyServer(
                    WHERE 1=1
                         AND d.account_id=a.id
                         AND d.currency_id=c.id
-                   ORDER BY d.value_date DESC, d.id DESC")
+                   ORDER BY d.value_date DESC, d.id DESC")$result
     })
     output$adm_depo_reviewtbl <- DT::renderDataTable(
         q_adm_depo_reviewtbl(),
@@ -292,7 +297,7 @@ shinyServer(
                           ,as.numeric(input$adm_depo_add_ccy)
                           ,as.numeric(input$adm_depo_add_intrate)
                           ,input$adm_depo_add_intratetyp
-                          ,as.numeric(input$adm_depo_add_intratespread)))
+                          ,as.numeric(input$adm_depo_add_intratespread)))$result
         shinyjs::reset("adm_depo_add_targ_acc")
         shinyjs::reset("adm_depo_add_valdate")
         shinyjs::reset("adm_depo_add_amt")
@@ -303,8 +308,41 @@ shinyServer(
         shinyjs::reset("adm_depo_add_intratespread")
         shinyjs::show("adm_depo_add_confirm")
     })
+
+# Page: Administration > Manage rates -------------------------------------
+
+    # Retrieve existing deposits in a data table
+    q_adm_rate_reviewtbl <- reactive({
+        input$adm_rate_add_btn
+        psqlQuery("SELECT 
+                    r.id AS \"Rate ID\",
+                    r.rate_name AS \"Rate Name\",
+                    r.rate_type AS \"Rate Type\"
+                   FROM rate r")$result
+    })
+    output$adm_rate_reviewtbl <- DT::renderDataTable(
+        q_adm_rate_reviewtbl(),
+        options = list(searching=F, paging=T),
+        rownames=F)
     
-    
+    observeEvent(input$adm_rate_add_btn,{
+            adm_rate_add_queryOut <- psqlQuery(sprintf("INSERT INTO rate 
+                                                                    (rate_name, 
+                                                                     rate_type)
+                                                        VALUES ('%s','%s');",
+                                                        input$adm_rate_add_ratename,
+                                                        input$adm_rate_add_ratetype
+                                                        ))
+            if(adm_rate_add_queryOut$errorMsg=="OK"){
+                adm_rate_confirm_msg <- paste0(input$adm_rate_add_ratename," rate added successfully.")
+            }
+            else {
+                adm_rate_confirm_msg <- adm_rate_add_queryOut$errorMsg
+            }
+            output$adm_rate_add_confirm <- renderText(adm_rate_confirm_msg)
+            shinyjs::show("adm_rate_confirm")
+    })
+
 # Page: Administration > Manage investment transactions -------------------
 
     # Display existing transactions in a data table
@@ -321,7 +359,7 @@ shinyServer(
                    FROM 
                     fund_investment_transaction_vw it
                    ORDER BY
-                    it.value_date DESC")
+                    it.value_date DESC")$result
     })
     output$adm_invtr_reviewtbl <- DT::renderDataTable(
                                               q_adm_invtr_reviewtbl(),
@@ -342,7 +380,7 @@ shinyServer(
                           ,as.numeric(input$adm_invtr_add_targ_acc)
                           ,as.numeric(input$adm_invtr_add_fund)
                           )
-                  )
+                  )$result
         shinyjs::reset("adm_invtr_add_valdate")
         shinyjs::reset("adm_invtr_add_ccy")
         shinyjs::reset("adm_invtr_add_tramt")
@@ -364,7 +402,7 @@ shinyServer(
                           fp.price AS \"Price\"
                  FROM fund_price fp, fund f
                  WHERE fp.fund_id=f.id
-                 ORDER BY fp.value_date DESC, f.id ASC")
+                 ORDER BY fp.value_date DESC, f.id ASC")$result
     })
     output$adm_fundprices_reviewtbl <- DT::renderDataTable(q_adm_fundprices_reviewtbl(),
                                               options = list(pageLength = 15),
@@ -390,7 +428,7 @@ shinyServer(
         
         for (i in 1:n_funds){
             fund_name <- gsub("\\."," ",names(adm_fundprices_upl_file_inp_df)[seq(from = 1, to = df_width, by = 3)][i])
-            fund_id <- psqlQuery(sprintf("SELECT id as fund_id FROM fund WHERE fund_name='%s'", fund_name))
+            fund_id <- psqlQuery(sprintf("SELECT id as fund_id FROM fund WHERE fund_name='%s'", fund_name))$result
             if (nrow(fund_id)==0){
                 price_tbl_pre <- data.frame(date=character(),fund_id=character(),fund_name=character(),price=character())
                 stop(sprintf("Process has been terminated. Unknown fund: %s. Please add first to the fund repository.", fund_name))
@@ -401,7 +439,7 @@ shinyServer(
             )
         }
         
-        psqlQuery("TRUNCATE TABLE ld_fund_price")
+        psqlQuery("TRUNCATE TABLE ld_fund_price")$result
         psqlInsert(price_tbl_pre, "ld_fund_price")
         
         psqlQuery("INSERT INTO fund_price (fund_id,value_date,price)
@@ -409,12 +447,62 @@ shinyServer(
                         fund_id::int
                         ,to_date(date, 'yyyy-mm-dd')
                         ,price::float
-                    FROM ld_fund_price")
+                    FROM ld_fund_price")$result
         })
 
-    
-    
-    
+# Page: Administration > Manage FX rates ----------------------------------
+
+    #Display existing fx rates in a data table
+    q_adm_fxrates_reviewtbl <- reactive({
+        input$adm_fxrates_imp_add_db_btn
+        psqlQuery("SELECT 
+                    rate_id AS \"Rate ID\", 
+                    rate_name AS \"Rate Name\", 
+                    value_date AS \"Value Date\", 
+                    value AS \"Rate Value\" 
+                   FROM rate_value_fx_vw
+                   ORDER BY value_date DESC, rate_id DESC")$result
+    })
+    output$adm_fxrates_reviewtbl <- DT::renderDataTable(q_adm_fxrates_reviewtbl(),
+                                                           options = list(pageLength = 15),
+                                                           rownames=F)
+
+        observeEvent(input$adm_fxrates_imp_btn,{
+            adm_fxrates_inpccy <- input$adm_fxrates_imp_ccy
+            adm_fxrates_inpdatefrom <- as.character(input$adm_fxrates_imp_datefrom, format="%d%%2F%m%%2F%Y")
+            adm_fxrates_inpdateto <- as.character(input$adm_fxrates_imp_dateto, format="%d%%2F%m%%2F%Y")
+            retrieve_url <- sprintf("https://www.mnb.hu/en/arfolyam-tablazat?deviza=rbCurrencySelect&devizaSelected=%s&datefrom=%s&datetill=%s&order=1", 
+                                    adm_fxrates_inpccy,
+                                    adm_fxrates_inpdatefrom,
+                                    adm_fxrates_inpdateto)
+            web_import <- getURL(retrieve_url)
+            df_import <- readHTMLTable(web_import, trim = T, header = F, as.data.frame = T, stringsAsFactors=F)[[1]]
+            
+            df_import[,1] <- as.Date(df_import[,1], format = "%d %B %Y")
+            df_import[,2] <- as.numeric(df_import[,2])
+            df_import[,3] <- sprintf("HUF%s",adm_fxrates_inpccy)
+            colnames(df_import) <- c("value_date","value","rate_name")
+            
+            shinyjs::show("adm_fxrates_imp_review")
+            output$adm_fxrates_out_df <- DT::renderDataTable(df_import, 
+                                                             options = list(pageLength = 5, 
+                                                                            searching = F),
+                                                             rownames=F)
+            psqlQuery("TRUNCATE TABLE ld_rate_value")$result
+            psqlInsert(df_import, "ld_rate_value")
+            
+                     })
+        observeEvent(input$adm_fxrates_imp_add_db_btn, {
+                psqlQuery("INSERT INTO rate_value (rate_id,value_date,value)
+                        SELECT
+                          r.id::int,
+                          to_date(ldrv.value_date,'yyyy-mm-dd'),
+                          ldrv.value::float
+                          FROM
+                          ld_rate_value ldrv
+                          LEFT OUTER JOIN rate r ON ldrv.rate_name=r.rate_name")$result
+                shinyjs::hide("adm_fxrates_imp_review")
+        })
 
 # end shinyServer() -------------------------------------------------------
 
