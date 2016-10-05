@@ -60,4 +60,10 @@ CREATE TRIGGER ratevalue_lastupd
   FOR EACH ROW
   EXECUTE PROCEDURE upd_timestamp();
 
+CREATE TRIGGER transaction_lastupd
+  BEFORE UPDATE
+  ON transaction
+  FOR EACH ROW
+  EXECUTE PROCEDURE upd_timestamp();
+
 --DROP TRIGGER account_lastupd ON account
