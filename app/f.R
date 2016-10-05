@@ -7,6 +7,7 @@ psqlQuery <- function(statement){
                          host = psqldburl, port = psqldbport,
                          user = psqldbuser, password = psqldbpw)
     data <- dbGetQuery(psqlcon, statement)
+    data <- c(result=list(data),dbGetException(psqlcon)) # $result, $errorNum, $errorMsg
     RPostgreSQL::dbDisconnect(psqlcon)
     data
 }
@@ -18,5 +19,6 @@ psqlInsert <- function(df, tablename){
                          host = psqldburl, port = psqldbport,
                          user = psqldbuser, password = psqldbpw)
     RPostgreSQL::dbWriteTable(psqlcon, tablename, value = df, append = T, row.names = F)
+    dbGetException(psqlcon) # $errorNum, $errorMsg
     RPostgreSQL::dbDisconnect(psqlcon)
 }
