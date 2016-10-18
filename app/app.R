@@ -156,7 +156,7 @@ server <- function(input, output, session) {
 # SERVERCOMPONENT: Funds > Fund Prices -----------------------------------------------
     
     # Retrieve fund prices from DB // reactive to the event of fund price upload
-    q_adm_fundprices_df <- reactive({
+    q_fundprices_df <- reactive({
         input$adm_fundprices_upl_btn
         fundprice_df <- psqlQuery("SELECT f.id, f.fund_name, fp.value_date, fp.price,
                                   (fp.price/first_value(price) OVER (PARTITION BY f.id ORDER BY fp.value_date)-1)*100 change_pct
@@ -168,12 +168,13 @@ server <- function(input, output, session) {
                                   AND fp.value_date>=fit.min_valdat")$result
         fundprice_df$value_date <- as.Date(fundprice_df$value_date, "%Y-%m-%d")
         fundprice_df$fund_name <- as.factor(fundprice_df$fund_name)
-        list(output=fundprice_df)
+        list(output=fundprice_df,
+             out_fundid=unique(fundprice_df$id))
     })
     
     # Create plot: relative price changes
     output$plot_fp_relative <- renderPlotly(
-        plot_ly(data=q_adm_fundprices_df()$output, 
+        plot_ly(data=q_fundprices_df()$output, 
                 x=~value_date, 
                 y=~change_pct, 
                 color = ~fund_name, 
@@ -182,15 +183,15 @@ server <- function(input, output, session) {
             )
     
     # Create dynamic plot rendering
-    lapply(fund_df$`Fund ID`, function(i) {
-        df <- isolate(q_adm_fundprices_df()$output)
+    lapply(isolate(q_fundprices_df()$out_fundid), function(i) { # fund_df$`Fund ID`
+        df <- isolate(q_fundprices_df()$output)
         data <- df[df$id==i,]
         output[[paste0("plot_fp_",i)]] <- renderPlotly(
             plot_ly(data=data, x=~value_date, y=~price, mode="lines") %>%
                 layout(xaxis=list(title=""), yaxis=list(title=""))
             )
         output[[paste0("dyn_plot_",i)]] <- renderUI({
-            box(fund_df$`Fund Name`[fund_df$`Fund ID`==i],
+            box(q_fundprices_df()$output["fund_name"][q_fundprices_df()$output["id"]==i],
                 plotlyOutput(paste0("plot_fp_",i)),
                 width = 6, 
                 solidHeader = T)
@@ -199,7 +200,33 @@ server <- function(input, output, session) {
 
 # SERVERCOMPONENT: Macro > FX Rates --------------------------------------------------
     
-    ### placeholder
+    # Retrieve FX rates from DB // reactive
+    q_fxrates_df <- reactive({
+        input$adm_fxrates_imp_add_db_btn
+        fxrates_df <- psqlQuery("SELECT
+	                                r.rate_name,
+                                    rv.value_date,
+                                    rv.value
+                                FROM
+                                    rate_value rv
+                                    ,rate r
+                                WHERE rv.rate_id=r.id
+                                    AND r.rate_type='FX';")$result
+        fxrates_df$rate_name <- as.factor(fxrates_df$rate_name)
+        fxrates_df$value_date <- as.Date(fxrates_df$value_date,"%Y-%m-%d")
+        list(output=fxrates_df)
+    })
+    
+    # Create plot
+    output$plot_fxrates <- renderPlotly(
+        plot_ly(data=q_fxrates_df()$output, 
+                x=~value_date, 
+                y=~value, 
+                mode="lines") %>%
+            layout(xaxis=list(title=""), yaxis=list(title="FX Rate value"))
+    )
+
+    
 
 # SERVERCOMPONENT: Administration > Manage accounts ----------------------------------
     
@@ -713,7 +740,14 @@ ui <- dashboardPage(
 # UI: Macro > FX Rates --------------------------------------------------
             
             tabItem(tabName = "macro_fx",
-                    h2("Macroeconomic Factors", tags$small("FX Rates"))
+                    h2("Macroeconomic Factors", tags$small("FX Rates")),
+                    fluidRow(
+                        box(
+                            plotlyOutput("plot_fxrates"),
+                            width = 12,
+                            status = "primary"
+                        )
+                    )
             ),
 
 # UI: Macro > Interest Rates --------------------------------------------
@@ -1018,9 +1052,8 @@ ui <- dashboardPage(
                             p("This module imports historical FX rates of HUF and 
                               various currency pairs from the official",
                               tags$a(href="http://mnb.hu/en/arfolyam-lekerdezes", "website"),
-                              "of Hungarian National Bank. (MNB)"),
-                            p("MNB currently quotes official central bank rates 
-                              for the following currencies only:",br(),"AUD, BGN, BRL, CAD, CHF, CNY, 
+                              "of Hungarian National Bank. (MNB) MNB currently quotes official central bank rates 
+                              for the following currencies only: AUD, BGN, BRL, CAD, CHF, CNY, 
 CZK, DKK, EUR, GBP, HKD, HRK, IDR, ILS, INR, ISK, JPY, KRW, MXN, MYR, NOK, NZD, PHP, PLN, RON, RSD, RUB, SEK,
 SGD, THB, TRY, UAH, USD, ZAR."),
                             column(width=3,
