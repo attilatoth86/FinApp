@@ -2,9 +2,9 @@ library("RPostgreSQL")
 
 psqlQuery <- function(statement){
     drv <- dbDriver("PostgreSQL")
-    source("dbcon_details.R", local = T)
+    source("/home/finapp/FinApp_dbcon_details.R", local = T)
     psqlcon <- dbConnect(drv, dbname = psqldbname,
-                         host = psqldburl, port = psqldbport,
+                         host = "localhost", port = 5432,
                          user = psqldbuser, password = psqldbpw)
     data <- dbGetQuery(psqlcon, statement)
     data <- c(result=list(data),dbGetException(psqlcon)) # $result, $errorNum, $errorMsg
@@ -14,11 +14,12 @@ psqlQuery <- function(statement){
 
 psqlInsert <- function(df, tablename){
     drv <- dbDriver("PostgreSQL")
-    source("dbcon_details.R", local = T)
+    source("/home/finapp/FinApp_dbcon_details.R", local = T)
     psqlcon <- dbConnect(drv, dbname = psqldbname,
-                         host = psqldburl, port = psqldbport,
+                         host = "localhost", port = 5432,
                          user = psqldbuser, password = psqldbpw)
     RPostgreSQL::dbWriteTable(psqlcon, tablename, value = df, append = T, row.names = F)
-    dbGetException(psqlcon) # $errorNum, $errorMsg
+    output <- dbGetException(psqlcon) # $errorNum, $errorMsg
     RPostgreSQL::dbDisconnect(psqlcon)
+    output
 }
