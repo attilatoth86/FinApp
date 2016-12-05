@@ -18,7 +18,7 @@ psqlInsert <- function(df, tablename){
     psqlcon <- dbConnect(drv, dbname = psqldbname,
                          host = "localhost", port = 5432,
                          user = psqldbuser, password = psqldbpw)
-    RPostgreSQL::dbWriteTable(psqlcon, tablename, value = df, append = T, row.names = F)
+    RPostgreSQL::dbWriteTable(psqlcon, c("app",tablename), value = df, append = T, row.names = F)
     output <- dbGetException(psqlcon) # $errorNum, $errorMsg
     RPostgreSQL::dbDisconnect(psqlcon)
     output
