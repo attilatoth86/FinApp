@@ -1,7 +1,9 @@
+paste("Run start:",Sys.time())
+
 library(RCurl)
 library(XML)
 
-source("/home/ati/FinApp/f.R")
+source("/srv/shiny-server/finapp/f.R")
 
 import_fx_df <- psqlQuery("SELECT 
                           MIN(a.date_open) date_open,
@@ -36,6 +38,8 @@ if(length(import_fx_df$iso_code)!=0){
             colnames(df_import) <- c("value_date","value","rate_name")
             psqlInsert(df_import, "ld_rate_value")
         }
+        print("Imported data:")
+        print(df_import)
     }
     psqlQuery("INSERT INTO app.rate_value (rate_id,value_date,value)
               SELECT
@@ -44,5 +48,5 @@ if(length(import_fx_df$iso_code)!=0){
               ldrv.value::float
               FROM
               app.ld_rate_value ldrv
-              LEFT OUTER JOIN app.rate r ON ldrv.rate_name=r.rate_name")$result
+              LEFT OUTER JOIN app.rate r ON ldrv.rate_name=r.rate_name")
 }
