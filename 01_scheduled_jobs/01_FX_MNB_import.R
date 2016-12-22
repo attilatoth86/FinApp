@@ -37,12 +37,12 @@ if(length(import_fx_df$iso_code)!=0){
             psqlInsert(df_import, "ld_rate_value")
         }
     }
-    # psqlQuery("INSERT INTO app.rate_value (rate_id,value_date,value)
-    #           SELECT
-    #           r.id::int,
-    #           to_date(ldrv.value_date,'yyyy-mm-dd'),
-    #           ldrv.value::float
-    #           FROM
-    #           app.ld_rate_value ldrv
-    #           LEFT OUTER JOIN app.rate r ON ldrv.rate_name=r.rate_name")$result
+    psqlQuery("INSERT INTO app.rate_value (rate_id,value_date,value)
+              SELECT
+              r.id::int,
+              to_date(ldrv.value_date,'yyyy-mm-dd'),
+              ldrv.value::float
+              FROM
+              app.ld_rate_value ldrv
+              LEFT OUTER JOIN app.rate r ON ldrv.rate_name=r.rate_name")$result
 }
