@@ -74,49 +74,49 @@ output$adm_invtr_add_fund_selector <- shiny::renderUI(selectInput("adm_invtr_add
 
 # SERV: init update FX rates --------------------------------------------
 
-import_fx_df <- psqlQuery("SELECT 
-                          MIN(a.date_open) date_open,
-                          c.iso_code
-                          FROM 
-                          app.account a, 
-                          app.currency c
-                          WHERE a.currency_id=c.id
-                          AND c.iso_code!='HUF'
-                          GROUP BY c.iso_code")$result
-psqlQuery("TRUNCATE TABLE app.ld_rate_value")$result
-
-if(length(import_fx_df$iso_code)!=0){
-    for(i in 1:length(import_fx_df$iso_code)) {
-        iso_code <- import_fx_df$iso_code[i]
-        
-        fx_firstDateToImport <- psqlQuery(sprintf("SELECT COALESCE(MAX(value_date)+1,'%s') value_date 
-                                                  FROM app.rate_value_fx_vw t WHERE t.rate_name='%s'",
-                                                  import_fx_df$date_open[i],
-                                                  paste0("HUF",iso_code)))$result[1,1]
-        
-        retrieve_url <- sprintf("https://www.mnb.hu/en/arfolyam-tablazat?deviza=rbCurrencySelect&devizaSelected=%s&datefrom=%s&datetill=%s&order=1", 
-                                iso_code,
-                                fx_firstDateToImport,
-                                Sys.Date())
-        web_import <- getURL(retrieve_url)
-        df_import <- readHTMLTable(web_import, trim = T, header = F, as.data.frame = T, stringsAsFactors=F)[[1]]
-        if(is.null(df_import)==F){
-            df_import[,1] <- as.Date(df_import[,1], format = "%d %B %Y")
-            df_import[,2] <- as.numeric(df_import[,2])
-            df_import[,3] <- sprintf("HUF%s",import_fx_df$iso_code[i])
-            colnames(df_import) <- c("value_date","value","rate_name")
-            psqlInsert(df_import, "ld_rate_value")
-        }
-    }
-    psqlQuery("INSERT INTO app.rate_value (rate_id,value_date,value)
-              SELECT
-              r.id::int,
-              to_date(ldrv.value_date,'yyyy-mm-dd'),
-              ldrv.value::float
-              FROM
-              app.ld_rate_value ldrv
-              LEFT OUTER JOIN app.rate r ON ldrv.rate_name=r.rate_name")$result
-}
+# import_fx_df <- psqlQuery("SELECT 
+#                           MIN(a.date_open) date_open,
+#                           c.iso_code
+#                           FROM 
+#                           app.account a, 
+#                           app.currency c
+#                           WHERE a.currency_id=c.id
+#                           AND c.iso_code!='HUF'
+#                           GROUP BY c.iso_code")$result
+# psqlQuery("TRUNCATE TABLE app.ld_rate_value")$result
+# 
+# if(length(import_fx_df$iso_code)!=0){
+#     for(i in 1:length(import_fx_df$iso_code)) {
+#         iso_code <- import_fx_df$iso_code[i]
+#         
+#         fx_firstDateToImport <- psqlQuery(sprintf("SELECT COALESCE(MAX(value_date)+1,'%s') value_date 
+#                                                   FROM app.rate_value_fx_vw t WHERE t.rate_name='%s'",
+#                                                   import_fx_df$date_open[i],
+#                                                   paste0("HUF",iso_code)))$result[1,1]
+#         
+#         retrieve_url <- sprintf("https://www.mnb.hu/en/arfolyam-tablazat?deviza=rbCurrencySelect&devizaSelected=%s&datefrom=%s&datetill=%s&order=1", 
+#                                 iso_code,
+#                                 fx_firstDateToImport,
+#                                 Sys.Date())
+#         web_import <- getURL(retrieve_url)
+#         df_import <- readHTMLTable(web_import, trim = T, header = F, as.data.frame = T, stringsAsFactors=F)[[1]]
+#         if(is.null(df_import)==F){
+#             df_import[,1] <- as.Date(df_import[,1], format = "%d %B %Y")
+#             df_import[,2] <- as.numeric(df_import[,2])
+#             df_import[,3] <- sprintf("HUF%s",import_fx_df$iso_code[i])
+#             colnames(df_import) <- c("value_date","value","rate_name")
+#             psqlInsert(df_import, "ld_rate_value")
+#         }
+#     }
+#     psqlQuery("INSERT INTO app.rate_value (rate_id,value_date,value)
+#               SELECT
+#               r.id::int,
+#               to_date(ldrv.value_date,'yyyy-mm-dd'),
+#               ldrv.value::float
+#               FROM
+#               app.ld_rate_value ldrv
+#               LEFT OUTER JOIN app.rate r ON ldrv.rate_name=r.rate_name")$result
+# }
 
 
 # SERV: init update interest rates ----------------------------------------
@@ -168,6 +168,7 @@ psqlQuery("INSERT INTO app.rate_value (rate_id,value_date,value)
 q_funds_ov_portf_statem_reviewtbl <- reactive({
     input$adm_fundprices_imp_add_db_btn
     input$adm_invtr_add_btn
+    # performance details on every single investment transaction
     df_fundportf_details <- rbind(
         data.frame('Account'=character(),
                    'Fund'=character(),
@@ -187,11 +188,12 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
                   ROUND(fpr.price*fit.share_amount) \"MarketValue\", 
                   ROUND(fpr.price*fit.share_amount)-ROUND(fit.tr_value) \"Income/Loss\",
                   ROUND(CAST((fpr.price*fit.share_amount-fit.tr_value)/fit.tr_value*100 AS DECIMAL),2) \"Yield%\",
-                  ROUND(CAST(((fpr.price*fit.share_amount/fit.tr_value)^(365/(app.get_last_fundprice_date()::date-fit.value_date+1)::float)-1)*100 AS DECIMAL),2) \"AnnualizedYield%\"
+                  ROUND(CAST(((fpr.price*fit.share_amount/fit.tr_value)^(365.0/(app.get_last_fundprice_date()::date-fit.value_date+1)::float)-1)*100 AS DECIMAL),2) \"AnnualizedYield%\"
                   FROM app.fund_investment_transaction_vw fit
                   INNER JOIN app.fund_price_recent_vw fpr ON fit.fund_id=fpr.fund_id
                   ORDER BY fit.value_date DESC, fit.account_id")$result
     )
+    # performance details aggregated to fund level
     df_fundportf_fund_details <- rbind(
         data.frame('Fund'=character(),
                    'PurchasedShares'=integer(),
@@ -207,7 +209,7 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
                     t1.marketvalue \"MarketValue\",
                     t1.incomeloss \"Income/Loss\",
                     ROUND(t2.avg_bal) \"AverageBalance\",
-                    ROUND(CAST((((t2.avg_bal+t1.incomeloss)/t2.avg_bal)^(365/t2.tot_period)-1)*100 AS DECIMAL),2) \"AnnualizedYield%\"
+                    ROUND(CAST((((t2.avg_bal+t1.incomeloss)/t2.avg_bal)^(365.0/t2.tot_period)-1)*100 AS DECIMAL),2) \"AnnualizedYield%\"
                     FROM
                     (
                     SELECT
@@ -236,22 +238,47 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
                     ) t2
                     WHERE t1.fund_id=t2.fund_id")$result
         )
+    # performance details aggregated to account level
     df_fundportf_acc_details <- rbind(
         data.frame('Account'=character(),
                    'InvestedAmount'=integer(),
                    'MarketValue'=integer(),
                    'Income/Loss'=integer(),
-                   'Yield%'=double()),
+                   'AverageBalance'=integer(),
+                   'AnnualizedYield%'=double()),
         psqlQuery("SELECT 
-                  fit.account_name \"Account\", 
-                  SUM(ROUND(fit.tr_value)) \"InvestedAmount\",
-                  ROUND(SUM(fpr.price*fit.share_amount)) \"MarketValue\",
-                  ROUND(SUM(fpr.price*fit.share_amount)-SUM(fit.tr_value)) \"Income/Loss\",
-                  ROUND(CAST((SUM(fpr.price*fit.share_amount)-SUM(fit.tr_value))/SUM(fit.tr_value)*100 AS DECIMAL),2) \"Yield%\"
-                  FROM app.fund_investment_transaction_vw fit
-                  INNER JOIN app.fund_price_recent_vw fpr ON fit.fund_id=fpr.fund_id
-                  GROUP BY fit.account_name
-                  ORDER BY fit.account_name")$result
+          t1.account_name \"Account\",
+                  t1.investedamount \"InvestedAmount\",
+                  t1.marketvalue \"MarketValue\",
+                  t1.incomeloss \"Income/Loss\",
+                  ROUND(t2.avg_bal) \"AverageBalance\",
+                  ROUND(CAST((((t2.avg_bal+t1.incomeloss)/t2.avg_bal)^(365.0/t2.tot_period)-1)*100 AS DECIMAL),2) \"AnnualizedYield%\"
+                  FROM
+                  (
+                  SELECT
+                  fit.account_id,
+                  fit.account_name,
+                  SUM(ROUND(fit.tr_value)) investedamount,
+                  SUM(ROUND(fpr.price*fit.share_amount)) marketvalue,
+                  SUM(ROUND(fpr.price*fit.share_amount)-ROUND(fit.tr_value)) incomeloss
+                  FROM 
+                  app.fund_investment_transaction_vw fit
+                  ,app.fund_price_recent_vw fpr
+                  WHERE fit.fund_id=fpr.fund_id
+                  GROUP BY
+                  fit.account_id,
+                  fit.account_name
+                  ) t1,
+                  (
+                  SELECT 
+                  v.account_id,
+                  SUM(v.valid_to-v.valid_from+1) tot_period,
+                  SUM((v.valid_to-v.valid_from+1)*balance)/SUM(v.valid_to-v.valid_from+1) avg_bal
+                  FROM app.fund_inv_tr_acc_bal_vw v
+                  GROUP BY
+                  v.account_id
+                  ) t2
+                  WHERE t1.account_id=t2.account_id")$result
         )
     list(out_details=df_fundportf_details,
          out_fund_details=df_fundportf_fund_details,
