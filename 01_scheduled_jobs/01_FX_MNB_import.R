@@ -1,10 +1,16 @@
-paste("Run start:",Sys.time())
+# Init
+paste("Script starts: ",Sys.time())
 
+# Preparation
+print("Importing necessary packages..")
 library(RCurl)
 library(XML)
 
+print("Importing functions..")
 source("/srv/shiny-server/finapp/f.R")
 
+# Import control
+print("Creating import control table..")
 import_fx_df <- psqlQuery("SELECT 
                           MIN(a.date_open) date_open,
                           c.iso_code
@@ -14,12 +20,21 @@ import_fx_df <- psqlQuery("SELECT
                           WHERE a.currency_id=c.id
                           AND c.iso_code!='HUF'
                           GROUP BY c.iso_code")$result
-psqlQuery("TRUNCATE TABLE app.ld_rate_value")$result
 
+print("Content of control table:")
+print(import_fx_df)
+
+# Truncate LD table
+clear_ld_tbl <- psqlQuery("TRUNCATE TABLE app.ld_rate_value")$errorMsg
+print("Truncate LD table..")
+print(paste("Status: ",clear_ld_tbl))
+
+# Importing
+print("Importing..")
 if(length(import_fx_df$iso_code)!=0){
     for(i in 1:length(import_fx_df$iso_code)) {
         iso_code <- import_fx_df$iso_code[i]
-        
+        print(paste("Processing currency: ",iso_code))
         fx_firstDateToImport <- psqlQuery(sprintf("SELECT COALESCE(MAX(value_date)+1,'%s') value_date 
                                                   FROM app.rate_value_fx_vw t WHERE t.rate_name='%s'",
                                                   import_fx_df$date_open[i],
@@ -29,6 +44,7 @@ if(length(import_fx_df$iso_code)!=0){
                                 iso_code,
                                 fx_firstDateToImport,
                                 Sys.Date())
+        print(paste("Retrieving URL: ",retrieve_url))
         web_import <- getURL(retrieve_url)
         df_import <- readHTMLTable(web_import, trim = T, header = F, as.data.frame = T, stringsAsFactors=F)[[1]]
         if(is.null(df_import)==F){
@@ -41,12 +57,16 @@ if(length(import_fx_df$iso_code)!=0){
         print("Imported data:")
         print(df_import)
     }
-    psqlQuery("INSERT INTO app.rate_value (rate_id,value_date,value)
-              SELECT
-              r.id::int,
-              to_date(ldrv.value_date,'yyyy-mm-dd'),
-              ldrv.value::float
-              FROM
-              app.ld_rate_value ldrv
-              LEFT OUTER JOIN app.rate r ON ldrv.rate_name=r.rate_name")
+    final_import <- psqlQuery("INSERT INTO app.rate_value (rate_id,value_date,value)
+                              SELECT
+                              r.id::int,
+                              to_date(ldrv.value_date,'yyyy-mm-dd'),
+                              ldrv.value::float
+                              FROM
+                              app.ld_rate_value ldrv
+                              LEFT OUTER JOIN app.rate r ON ldrv.rate_name=r.rate_name")
+    print("Status of import into app.rate_value table:")
+    print(final_import$errorMsg)
 }
+
+print(paste("Script ends: ",Sys.time()))
