@@ -1107,7 +1107,7 @@ tabItem(tabName = "adm_fxrates",
                   for the following currencies only: AUD, BGN, BRL, CAD, CHF, CNY, 
                   CZK, DKK, EUR, GBP, HKD, HRK, IDR, ILS, INR, ISK, JPY, KRW, MXN, MYR, NOK, NZD, PHP, PLN, RON, RSD, RUB, SEK,
                   SGD, THB, TRY, UAH, USD, ZAR."),
-                p("Note: Rates are being imported automatically upon loading the application.")
+                p("Note: Rates are being imported automatically on a daily basis.")
                 )
          ),
         fluidRow(box(DT::dataTableOutput("adm_fxrates_reviewtbl"),width = 12))
