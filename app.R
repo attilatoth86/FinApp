@@ -501,99 +501,99 @@ output$adm_fundprices_reviewtbl <- DT::renderDataTable(q_adm_fundprices_reviewtb
                                                        options = list(pageLength = 10),
                                                        rownames=F)
 
-observeEvent(input$adm_fundprices_upl_btn,{
-shinyjs::hide("adm_fundprices_add_confirm")
-shinyjs::hide("adm_fundprices_add_error")
+# observeEvent(input$adm_fundprices_upl_btn,{
+# shinyjs::hide("adm_fundprices_add_confirm")
+# shinyjs::hide("adm_fundprices_add_error")
+# 
+# fp_import_ctrltbl <- psqlQuery("SELECT f.id fund_id, f.fund_name, f.source_id, MIN(COALESCE(fpv.value_date,fit.value_date-1))+1 import_date_from
+#                                 FROM app.fund_investment_transaction fit
+#                                 INNER JOIN app.fund f ON fit.fund_id=f.id
+#                                 LEFT OUTER JOIN app.fund_price_recent_vw fpv ON fit.fund_id=fpv.fund_id
+#                                 GROUP BY f.id, f.fund_name, f.source_id")$result
+# 
+# price_tbl_pre <- data.frame(date=character(),fund_id=character(),fund_name=character(),price=character(),stringsAsFactors=F)
+# withProgress(message="Downloading fund prices, please wait..", value = 0, {
+#     for(i in 1:nrow(fp_import_ctrltbl)){
+#         incProgress(1/nrow(fp_import_ctrltbl), detail = paste("importing: ", fp_import_ctrltbl[i,2]))
+#         download.file(url=sprintf("https://www.aegonalapkezelo.hu/elemzes/grafikonrajzolo/?id%%5B%%5D=%s&mode=download&min_date=%s&max_date=%s",
+#                                   fp_import_ctrltbl[i,3],
+#                                   fp_import_ctrltbl[i,4],
+#                                   Sys.Date()),
+#                       destfile = "tmp.xls",
+#                       method = "curl")
+#         if(length(readLines(xls2csv("tmp.xls")))==0){
+#             price_tbl_pre <- rbind(price_tbl_pre,
+#                                    data.frame(date=character(),fund_id=character(),fund_name=character(),price=character(),stringsAsFactors=F))
+#         }
+#         else {
+#             fileContent <- read.xls("tmp.xls",sheet = 1,stringsAsFactors=F)
+#             price_tbl_pre <- rbind(price_tbl_pre,
+#                                    cbind(fileContent[-1,1],fp_import_ctrltbl[i,1],fp_import_ctrltbl[i,2],fileContent[-1,3]))
+#         }
+#         file.remove("tmp.xls")
+#     }
+# })
+# 
+# psqlQuery("TRUNCATE TABLE app.ld_fund_price")$result
+# psqlInsert(price_tbl_pre, "ld_fund_price")
+# q_adm_fundprices_pre_out_df <- rbind(
+#     data.frame("FundID"=integer(),
+#                "ValueDate"=character(),
+#                "FundPrice"=numeric()),
+#     psqlQuery("SELECT
+#                 ldfp.fund_id::int \"FundID\"
+#                 ,ldfp.date \"ValueDate\"
+#                 ,ldfp.price::float \"FundPrice\"
+#                 FROM app.ld_fund_price ldfp
+#                 LEFT OUTER JOIN app.fund_price fp ON ldfp.fund_id::int=fp.fund_id
+#                     AND to_date(ldfp.date, 'yyyy-mm-dd')=fp.value_date
+#                 LEFT OUTER JOIN (SELECT f.id fund_id, MIN(COALESCE(fpv.value_date,fit.value_date-1))+1 import_date_from
+#                                 FROM app.fund_investment_transaction fit
+#                                 INNER JOIN app.fund f ON fit.fund_id=f.id
+#                                 LEFT OUTER JOIN app.fund_price_recent_vw fpv ON fit.fund_id=fpv.fund_id
+#                                 GROUP BY f.id) t ON ldfp.fund_id::int=t.fund_id
+#                 WHERE fp.id IS NULL
+#                     AND to_date(ldfp.date, 'yyyy-mm-dd')>=t.import_date_from
+#                 ORDER BY ldfp.date DESC, ldfp.fund_id")$result
+# )
+#                                
+# 
+# output$adm_fundprices_pre_out_df <- DT::renderDataTable(q_adm_fundprices_pre_out_df,
+#                                                         options = list(pageLength = 10),
+#                                                         rownames=F)
+# shinyjs::show("adm_fundprices_preload_reviewtbl")
+# })
 
-fp_import_ctrltbl <- psqlQuery("SELECT f.id fund_id, f.fund_name, f.source_id, MIN(COALESCE(fpv.value_date,fit.value_date-1))+1 import_date_from
-                                FROM app.fund_investment_transaction fit
-                                INNER JOIN app.fund f ON fit.fund_id=f.id
-                                LEFT OUTER JOIN app.fund_price_recent_vw fpv ON fit.fund_id=fpv.fund_id
-                                GROUP BY f.id, f.fund_name, f.source_id")$result
-
-price_tbl_pre <- data.frame(date=character(),fund_id=character(),fund_name=character(),price=character(),stringsAsFactors=F)
-withProgress(message="Downloading fund prices, please wait..", value = 0, {
-    for(i in 1:nrow(fp_import_ctrltbl)){
-        incProgress(1/nrow(fp_import_ctrltbl), detail = paste("importing: ", fp_import_ctrltbl[i,2]))
-        download.file(url=sprintf("https://www.aegonalapkezelo.hu/elemzes/grafikonrajzolo/?id%%5B%%5D=%s&mode=download&min_date=%s&max_date=%s",
-                                  fp_import_ctrltbl[i,3],
-                                  fp_import_ctrltbl[i,4],
-                                  Sys.Date()),
-                      destfile = "tmp.xls",
-                      method = "curl")
-        if(length(readLines(xls2csv("tmp.xls")))==0){
-            price_tbl_pre <- rbind(price_tbl_pre,
-                                   data.frame(date=character(),fund_id=character(),fund_name=character(),price=character(),stringsAsFactors=F))
-        }
-        else {
-            fileContent <- read.xls("tmp.xls",sheet = 1,stringsAsFactors=F)
-            price_tbl_pre <- rbind(price_tbl_pre,
-                                   cbind(fileContent[-1,1],fp_import_ctrltbl[i,1],fp_import_ctrltbl[i,2],fileContent[-1,3]))
-        }
-        file.remove("tmp.xls")
-    }
-})
-
-psqlQuery("TRUNCATE TABLE app.ld_fund_price")$result
-psqlInsert(price_tbl_pre, "ld_fund_price")
-q_adm_fundprices_pre_out_df <- rbind(
-    data.frame("FundID"=integer(),
-               "ValueDate"=character(),
-               "FundPrice"=numeric()),
-    psqlQuery("SELECT
-                ldfp.fund_id::int \"FundID\"
-                ,ldfp.date \"ValueDate\"
-                ,ldfp.price::float \"FundPrice\"
-                FROM app.ld_fund_price ldfp
-                LEFT OUTER JOIN app.fund_price fp ON ldfp.fund_id::int=fp.fund_id
-                    AND to_date(ldfp.date, 'yyyy-mm-dd')=fp.value_date
-                LEFT OUTER JOIN (SELECT f.id fund_id, MIN(COALESCE(fpv.value_date,fit.value_date-1))+1 import_date_from
-                                FROM app.fund_investment_transaction fit
-                                INNER JOIN app.fund f ON fit.fund_id=f.id
-                                LEFT OUTER JOIN app.fund_price_recent_vw fpv ON fit.fund_id=fpv.fund_id
-                                GROUP BY f.id) t ON ldfp.fund_id::int=t.fund_id
-                WHERE fp.id IS NULL
-                    AND to_date(ldfp.date, 'yyyy-mm-dd')>=t.import_date_from
-                ORDER BY ldfp.date DESC, ldfp.fund_id")$result
-)
-                               
-
-output$adm_fundprices_pre_out_df <- DT::renderDataTable(q_adm_fundprices_pre_out_df,
-                                                        options = list(pageLength = 10),
-                                                        rownames=F)
-shinyjs::show("adm_fundprices_preload_reviewtbl")
-})
-
-observeEvent(input$adm_fundprices_imp_add_db_btn, {
-    shinyjs::hide("adm_fundprices_preload_reviewtbl")
-    adm_fundprices_imp_add_db_btn_queryOut <- psqlQuery("INSERT INTO app.fund_price (fund_id,value_date,price)
-                                                        SELECT
-                                                        ldfp.fund_id::int \"FundID\"
-                                                        ,to_date(ldfp.date, 'yyyy-mm-dd') \"ValueDate\"
-                                                        ,ldfp.price::float \"FundPrice\"
-                                                        FROM app.ld_fund_price ldfp
-                                                        LEFT OUTER JOIN app.fund_price fp ON ldfp.fund_id::int=fp.fund_id
-                                                        AND to_date(ldfp.date, 'yyyy-mm-dd')=fp.value_date
-                                                        LEFT OUTER JOIN (SELECT f.id fund_id, MIN(COALESCE(fpv.value_date,fit.value_date-1))+1 import_date_from
-                                                                        FROM app.fund_investment_transaction fit
-                                                                        INNER JOIN app.fund f ON fit.fund_id=f.id
-                                                                        LEFT OUTER JOIN app.fund_price_recent_vw fpv ON fit.fund_id=fpv.fund_id
-                                                                        GROUP BY f.id) t ON ldfp.fund_id::int=t.fund_id
-                                                        WHERE fp.id IS NULL
-                                                        AND to_date(ldfp.date, 'yyyy-mm-dd')>=t.import_date_from
-                                                        ORDER BY ldfp.date DESC, ldfp.fund_id")
-    if(adm_fundprices_imp_add_db_btn_queryOut$errorMsg=="OK"){
-        shinyjs::show("adm_fundprices_add_confirm", anim = T, animType = "fade", time = 1)
-    }
-    else {
-        output$adm_fundprices_add_error_txt <- renderText(adm_fundprices_imp_add_db_btn_queryOut$errorMsg)
-        shinyjs::show("adm_fundprices_add_error", anim = T, animType = "fade", time = 1)
-    }
-})
-observeEvent(input$adm_fundprices_imp_add_db_cancel_btn, {
-    shinyjs::hide("adm_fundprices_preload_reviewtbl")
-    psqlQuery("TRUNCATE TABLE app.ld_fund_price")$result
-})
+# observeEvent(input$adm_fundprices_imp_add_db_btn, {
+#     shinyjs::hide("adm_fundprices_preload_reviewtbl")
+#     adm_fundprices_imp_add_db_btn_queryOut <- psqlQuery("INSERT INTO app.fund_price (fund_id,value_date,price)
+#                                                         SELECT
+#                                                         ldfp.fund_id::int \"FundID\"
+#                                                         ,to_date(ldfp.date, 'yyyy-mm-dd') \"ValueDate\"
+#                                                         ,ldfp.price::float \"FundPrice\"
+#                                                         FROM app.ld_fund_price ldfp
+#                                                         LEFT OUTER JOIN app.fund_price fp ON ldfp.fund_id::int=fp.fund_id
+#                                                         AND to_date(ldfp.date, 'yyyy-mm-dd')=fp.value_date
+#                                                         LEFT OUTER JOIN (SELECT f.id fund_id, MIN(COALESCE(fpv.value_date,fit.value_date-1))+1 import_date_from
+#                                                                         FROM app.fund_investment_transaction fit
+#                                                                         INNER JOIN app.fund f ON fit.fund_id=f.id
+#                                                                         LEFT OUTER JOIN app.fund_price_recent_vw fpv ON fit.fund_id=fpv.fund_id
+#                                                                         GROUP BY f.id) t ON ldfp.fund_id::int=t.fund_id
+#                                                         WHERE fp.id IS NULL
+#                                                         AND to_date(ldfp.date, 'yyyy-mm-dd')>=t.import_date_from
+#                                                         ORDER BY ldfp.date DESC, ldfp.fund_id")
+#     if(adm_fundprices_imp_add_db_btn_queryOut$errorMsg=="OK"){
+#         shinyjs::show("adm_fundprices_add_confirm", anim = T, animType = "fade", time = 1)
+#     }
+#     else {
+#         output$adm_fundprices_add_error_txt <- renderText(adm_fundprices_imp_add_db_btn_queryOut$errorMsg)
+#         shinyjs::show("adm_fundprices_add_error", anim = T, animType = "fade", time = 1)
+#     }
+# })
+# observeEvent(input$adm_fundprices_imp_add_db_cancel_btn, {
+#     shinyjs::hide("adm_fundprices_preload_reviewtbl")
+#     psqlQuery("TRUNCATE TABLE app.ld_fund_price")$result
+# })
 
 # SERV: Admin > Manage rates --------------------------
 
@@ -1005,51 +1005,51 @@ tabItem(tabName = "adm_fund",
 
 tabItem(tabName = "adm_fundprices",
         h2("Administration", tags$small("Manage fund prices")),
-        fluidRow(box(width = 6,
-                     title = "Import Aegon Fund Prices",
-                     solidHeader = T, status = "danger",
-                     p("This module imports prices of funds managed by ",tags$a(href="http://www.aegonalapkezelo.hu","Aegon Asset Management.")),
-                     actionButton("adm_fundprices_upl_btn",
-                                  "Import", 
-                                  icon("database"))
-                     )
-                 ),
-        fluidRow(shinyjs::hidden(
-                        div(id="adm_fundprices_preload_reviewtbl",
-                            box(width=12,
-                                status="success",
-                                title="Review the list of prices to be added",
-                                solidHeader = T,
-                                DT::dataTableOutput("adm_fundprices_pre_out_df"),
-                                br(),
-                                actionButton("adm_fundprices_imp_add_db_btn", 
-                                             "Add to database",
-                                             icon("plus")
-                                             ),
-                                actionButton("adm_fundprices_imp_add_db_cancel_btn", 
-                                             "Cancel"
-                                )
-                                )
-                            )
-                    ),
-                 column(width = 12,
-                        shinyjs::hidden(
-                            div(id="adm_fundprices_add_confirm",
-                                class="alert alert-success",
-                                role="alert",
-                                tags$b(icon("check"),"Fund prices have been added successfully.")
-                            )
-                        ),
-                        shinyjs::hidden(
-                            div(id="adm_fundprices_add_error",
-                                class="alert alert-danger",
-                                role="alert",
-                                h4(icon("exclamation"),"Error"),
-                                p(textOutput("adm_fundprices_add_error_txt"))
-                            )
-                         )
-                        )
-                 ),
+        # fluidRow(box(width = 6,
+        #              title = "Import Aegon Fund Prices",
+        #              solidHeader = T, status = "danger",
+        #              p("This module imports prices of funds managed by ",tags$a(href="http://www.aegonalapkezelo.hu","Aegon Asset Management.")),
+        #              actionButton("adm_fundprices_upl_btn",
+        #                           "Import", 
+        #                           icon("database"))
+        #              )
+        #          ),
+        # fluidRow(shinyjs::hidden(
+        #                 div(id="adm_fundprices_preload_reviewtbl",
+        #                     box(width=12,
+        #                         status="success",
+        #                         title="Review the list of prices to be added",
+        #                         solidHeader = T,
+        #                         DT::dataTableOutput("adm_fundprices_pre_out_df"),
+        #                         br(),
+        #                         actionButton("adm_fundprices_imp_add_db_btn", 
+        #                                      "Add to database",
+        #                                      icon("plus")
+        #                                      ),
+        #                         actionButton("adm_fundprices_imp_add_db_cancel_btn", 
+        #                                      "Cancel"
+        #                         )
+        #                         )
+        #                     )
+        #             ),
+        #          column(width = 12,
+        #                 shinyjs::hidden(
+        #                     div(id="adm_fundprices_add_confirm",
+        #                         class="alert alert-success",
+        #                         role="alert",
+        #                         tags$b(icon("check"),"Fund prices have been added successfully.")
+        #                     )
+        #                 ),
+        #                 shinyjs::hidden(
+        #                     div(id="adm_fundprices_add_error",
+        #                         class="alert alert-danger",
+        #                         role="alert",
+        #                         h4(icon("exclamation"),"Error"),
+        #                         p(textOutput("adm_fundprices_add_error_txt"))
+        #                     )
+        #                  )
+        #                 )
+        #          ),
         fluidRow(
             box(DT::dataTableOutput("adm_fundprices_reviewtbl"),
                 width = 12)
