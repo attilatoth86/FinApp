@@ -9,11 +9,6 @@ library(shinyjs)
 
 library(DT)
 
-library(gdata)
-
-library(RCurl)
-library(XML)
-
 # init source() -----------------------------------------------------------
 
 source("f.R")
@@ -77,6 +72,7 @@ output$adm_invtr_add_fund_selector <- shiny::renderUI(selectInput("adm_invtr_add
 q_funds_ov_portf_statem_reviewtbl <- reactive({
     input$adm_fundprices_imp_add_db_btn
     input$adm_invtr_add_btn
+    
     # performance details on every single investment transaction
     df_fundportf_details <- rbind(
         data.frame('Account'=character(),
@@ -102,6 +98,7 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
                   INNER JOIN app.fund_price_recent_vw fpr ON fit.fund_id=fpr.fund_id
                   ORDER BY fit.value_date DESC, fit.account_id")$result
     )
+    
     # performance details aggregated to fund level
     df_fundportf_fund_details <- rbind(
         data.frame('Fund'=character(),
@@ -147,6 +144,7 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
                     ) t2
                     WHERE t1.fund_id=t2.fund_id")$result
         )
+    
     # performance details aggregated to account level
     df_fundportf_acc_details <- rbind(
         data.frame('Account'=character(),
@@ -189,9 +187,46 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
                   ) t2
                   WHERE t1.account_id=t2.account_id")$result
         )
+    
+    # Long term portfolio pie chart
+    df_piechart_lt_portf <- rbind(
+        data.frame(fund_name=character(),
+                   val=double()),
+        psqlQuery("SELECT 
+                    fit.fund_name,
+                    SUM(fit.share_amount*fp.price) val
+                    FROM 
+                    app.fund_investment_transaction_vw fit,
+                    app.fund_price_recent_vw fp
+                    WHERE 1=1
+                    AND fit.fund_id=fp.fund_id
+                    AND fit.account_name like '%TBSZ%'
+                    GROUP BY
+                    fit.fund_name")$result
+    )
+    
+    # Short term portfolio pie chart
+    df_piechart_st_portf <- rbind(
+        data.frame(fund_name=character(),
+                   val=double()),
+        psqlQuery("SELECT 
+                    fit.fund_name,
+                    SUM(fit.share_amount*fp.price) val
+                    FROM 
+                    app.fund_investment_transaction_vw fit,
+                    app.fund_price_recent_vw fp
+                    WHERE 1=1
+                    AND fit.fund_id=fp.fund_id
+                    AND fit.account_name not like '%TBSZ%'
+                    GROUP BY
+                    fit.fund_name")$result
+    )
+    
     list(out_details=df_fundportf_details,
          out_fund_details=df_fundportf_fund_details,
-         out_acc_details=df_fundportf_acc_details)
+         out_acc_details=df_fundportf_acc_details,
+         out_piechart_lt_pf=df_piechart_lt_portf,
+         out_piechart_st_pf=df_piechart_st_portf)
 })
 
 output$funds_ov_portf_statem_reviewtbl <- DT::renderDataTable(q_funds_ov_portf_statem_reviewtbl()$out_details,
@@ -206,6 +241,22 @@ output$funds_ov_portf_statem_acc_reviewtbl <- DT::renderDataTable(q_funds_ov_por
                                                                       options = list(searching=F, paging=F, scrollX = T),
                                                                       rownames=F)
 
+output$funds_ov_lt_pf_piechart <- renderPlotly(
+    plot_ly() %>% 
+        add_pie(data=q_funds_ov_portf_statem_reviewtbl()$out_piechart_lt_pf, labels = ~fund_name, values = ~val) %>% 
+        layout(title = 'Long-term Portfolio',
+               xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+               yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+)
+
+output$funds_ov_st_pf_piechart <- renderPlotly(
+    plot_ly() %>% 
+        add_pie(data=q_funds_ov_portf_statem_reviewtbl()$out_piechart_st_pf, labels = ~fund_name, values = ~val) %>% 
+        layout(title = 'Short-term Portfolio',
+               xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+               yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+)
+
 
 # SERV: Funds > Fund Prices -----------------------------------------------
 
@@ -218,7 +269,8 @@ q_fundprices_df <- reactive({
                               t.value_date, 
                               t.price, 
                               t.change_pct, 
-                              CASE WHEN t.purchase IS NOT NULL THEN change_pct END purchase
+                              CASE WHEN t.purchase IS NOT NULL THEN change_pct END purchase,
+                              CASE WHEN t.purchase IS NOT NULL THEN price END purchase_price
                               FROM
                               (
                               SELECT f.id, f.fund_name, fp.value_date, fp.price,
@@ -253,8 +305,9 @@ lapply(isolate(q_fundprices_df()$out_fundid), function(i) {
     df <- isolate(q_fundprices_df()$output)
     data <- df[df$id==i,]
     output[[paste0("plot_fp_",i)]] <- renderPlotly(
-        plot_ly(data=data, x=~value_date, y=~price, mode="lines") %>%
-            layout(xaxis=list(title=""), yaxis=list(title=""))
+        plot_ly() %>% add_trace(data=data, x=~value_date, y=~price, mode="lines") %>%
+            add_trace(data=data, x=~value_date, y=~purchase_price, name="Investments", mode="markers") %>%
+            layout(showlegend = F, xaxis=list(title=""), yaxis=list(title=""))
     )
     output[[paste0("dyn_plot_",i)]] <- renderUI({
         box(q_fundprices_df()$output["fund_name"][q_fundprices_df()$output["id"]==i],
@@ -331,7 +384,7 @@ q_adm_acc_reviewtbl <- reactive({
           )
 })
 output$adm_acc_reviewtbl <- DT::renderDataTable(q_adm_acc_reviewtbl(),
-                                                options = list(searching=F, paging=F),
+                                                options = list(searching=F, paging=F, scrollX = T),
                                                 rownames=F)
 
 observeEvent(input$adm_acc_add_btn, {
@@ -391,7 +444,7 @@ q_adm_depo_reviewtbl <- reactive({
     )
 })
 output$adm_depo_reviewtbl <- DT::renderDataTable(q_adm_depo_reviewtbl(),
-                                                options = list(searching=F, paging=F),
+                                                options = list(searching=F, paging=F, scrollX = T),
                                                 rownames=F)
 
 observeEvent(input$adm_depo_add_btn, {
@@ -452,7 +505,7 @@ q_adm_fund_reviewtbl <- reactive({
                     to_char(last_modification,'YYYY-MM-DD HH24:MI:SS') \"LastModification\" FROM app.fund ORDER BY id")$result
     )
 })
-output$adm_fund_reviewtbl <- DT::renderDataTable(q_adm_fund_reviewtbl(), options=list(searching=F, paging=F), 
+output$adm_fund_reviewtbl <- DT::renderDataTable(q_adm_fund_reviewtbl(), options=list(searching=F, paging=F, scrollX = T), 
                                                  rownames=F)
 
 observeEvent(input$adm_fund_add_btn,{
@@ -498,102 +551,8 @@ q_adm_fundprices_reviewtbl <- reactive({
     )
 })
 output$adm_fundprices_reviewtbl <- DT::renderDataTable(q_adm_fundprices_reviewtbl(),
-                                                       options = list(pageLength = 10),
+                                                       options = list(pageLength = 10, scrollX = T),
                                                        rownames=F)
-
-# observeEvent(input$adm_fundprices_upl_btn,{
-# shinyjs::hide("adm_fundprices_add_confirm")
-# shinyjs::hide("adm_fundprices_add_error")
-# 
-# fp_import_ctrltbl <- psqlQuery("SELECT f.id fund_id, f.fund_name, f.source_id, MIN(COALESCE(fpv.value_date,fit.value_date-1))+1 import_date_from
-#                                 FROM app.fund_investment_transaction fit
-#                                 INNER JOIN app.fund f ON fit.fund_id=f.id
-#                                 LEFT OUTER JOIN app.fund_price_recent_vw fpv ON fit.fund_id=fpv.fund_id
-#                                 GROUP BY f.id, f.fund_name, f.source_id")$result
-# 
-# price_tbl_pre <- data.frame(date=character(),fund_id=character(),fund_name=character(),price=character(),stringsAsFactors=F)
-# withProgress(message="Downloading fund prices, please wait..", value = 0, {
-#     for(i in 1:nrow(fp_import_ctrltbl)){
-#         incProgress(1/nrow(fp_import_ctrltbl), detail = paste("importing: ", fp_import_ctrltbl[i,2]))
-#         download.file(url=sprintf("https://www.aegonalapkezelo.hu/elemzes/grafikonrajzolo/?id%%5B%%5D=%s&mode=download&min_date=%s&max_date=%s",
-#                                   fp_import_ctrltbl[i,3],
-#                                   fp_import_ctrltbl[i,4],
-#                                   Sys.Date()),
-#                       destfile = "tmp.xls",
-#                       method = "curl")
-#         if(length(readLines(xls2csv("tmp.xls")))==0){
-#             price_tbl_pre <- rbind(price_tbl_pre,
-#                                    data.frame(date=character(),fund_id=character(),fund_name=character(),price=character(),stringsAsFactors=F))
-#         }
-#         else {
-#             fileContent <- read.xls("tmp.xls",sheet = 1,stringsAsFactors=F)
-#             price_tbl_pre <- rbind(price_tbl_pre,
-#                                    cbind(fileContent[-1,1],fp_import_ctrltbl[i,1],fp_import_ctrltbl[i,2],fileContent[-1,3]))
-#         }
-#         file.remove("tmp.xls")
-#     }
-# })
-# 
-# psqlQuery("TRUNCATE TABLE app.ld_fund_price")$result
-# psqlInsert(price_tbl_pre, "ld_fund_price")
-# q_adm_fundprices_pre_out_df <- rbind(
-#     data.frame("FundID"=integer(),
-#                "ValueDate"=character(),
-#                "FundPrice"=numeric()),
-#     psqlQuery("SELECT
-#                 ldfp.fund_id::int \"FundID\"
-#                 ,ldfp.date \"ValueDate\"
-#                 ,ldfp.price::float \"FundPrice\"
-#                 FROM app.ld_fund_price ldfp
-#                 LEFT OUTER JOIN app.fund_price fp ON ldfp.fund_id::int=fp.fund_id
-#                     AND to_date(ldfp.date, 'yyyy-mm-dd')=fp.value_date
-#                 LEFT OUTER JOIN (SELECT f.id fund_id, MIN(COALESCE(fpv.value_date,fit.value_date-1))+1 import_date_from
-#                                 FROM app.fund_investment_transaction fit
-#                                 INNER JOIN app.fund f ON fit.fund_id=f.id
-#                                 LEFT OUTER JOIN app.fund_price_recent_vw fpv ON fit.fund_id=fpv.fund_id
-#                                 GROUP BY f.id) t ON ldfp.fund_id::int=t.fund_id
-#                 WHERE fp.id IS NULL
-#                     AND to_date(ldfp.date, 'yyyy-mm-dd')>=t.import_date_from
-#                 ORDER BY ldfp.date DESC, ldfp.fund_id")$result
-# )
-#                                
-# 
-# output$adm_fundprices_pre_out_df <- DT::renderDataTable(q_adm_fundprices_pre_out_df,
-#                                                         options = list(pageLength = 10),
-#                                                         rownames=F)
-# shinyjs::show("adm_fundprices_preload_reviewtbl")
-# })
-
-# observeEvent(input$adm_fundprices_imp_add_db_btn, {
-#     shinyjs::hide("adm_fundprices_preload_reviewtbl")
-#     adm_fundprices_imp_add_db_btn_queryOut <- psqlQuery("INSERT INTO app.fund_price (fund_id,value_date,price)
-#                                                         SELECT
-#                                                         ldfp.fund_id::int \"FundID\"
-#                                                         ,to_date(ldfp.date, 'yyyy-mm-dd') \"ValueDate\"
-#                                                         ,ldfp.price::float \"FundPrice\"
-#                                                         FROM app.ld_fund_price ldfp
-#                                                         LEFT OUTER JOIN app.fund_price fp ON ldfp.fund_id::int=fp.fund_id
-#                                                         AND to_date(ldfp.date, 'yyyy-mm-dd')=fp.value_date
-#                                                         LEFT OUTER JOIN (SELECT f.id fund_id, MIN(COALESCE(fpv.value_date,fit.value_date-1))+1 import_date_from
-#                                                                         FROM app.fund_investment_transaction fit
-#                                                                         INNER JOIN app.fund f ON fit.fund_id=f.id
-#                                                                         LEFT OUTER JOIN app.fund_price_recent_vw fpv ON fit.fund_id=fpv.fund_id
-#                                                                         GROUP BY f.id) t ON ldfp.fund_id::int=t.fund_id
-#                                                         WHERE fp.id IS NULL
-#                                                         AND to_date(ldfp.date, 'yyyy-mm-dd')>=t.import_date_from
-#                                                         ORDER BY ldfp.date DESC, ldfp.fund_id")
-#     if(adm_fundprices_imp_add_db_btn_queryOut$errorMsg=="OK"){
-#         shinyjs::show("adm_fundprices_add_confirm", anim = T, animType = "fade", time = 1)
-#     }
-#     else {
-#         output$adm_fundprices_add_error_txt <- renderText(adm_fundprices_imp_add_db_btn_queryOut$errorMsg)
-#         shinyjs::show("adm_fundprices_add_error", anim = T, animType = "fade", time = 1)
-#     }
-# })
-# observeEvent(input$adm_fundprices_imp_add_db_cancel_btn, {
-#     shinyjs::hide("adm_fundprices_preload_reviewtbl")
-#     psqlQuery("TRUNCATE TABLE app.ld_fund_price")$result
-# })
 
 # SERV: Admin > Manage rates --------------------------
 
@@ -612,7 +571,7 @@ q_adm_rate_reviewtbl <- reactive({
     )
 })
 output$adm_rate_reviewtbl <- DT::renderDataTable(q_adm_rate_reviewtbl(),
-                                                options = list(searching=F, paging=F),
+                                                options = list(searching=F, paging=F, scrollX = T),
                                                 rownames=F)
 
 observeEvent(input$adm_rate_add_btn,{
@@ -654,7 +613,7 @@ q_adm_fxrates_reviewtbl <-
               FROM app.rate_value
               ORDER BY value_date DESC, rate_id")$result
     )
-output$adm_fxrates_reviewtbl <- DT::renderDataTable(q_adm_fxrates_reviewtbl,rownames=F)
+output$adm_fxrates_reviewtbl <- DT::renderDataTable(q_adm_fxrates_reviewtbl,options=list(scrollX = T), rownames=F)
 
 # SERV: Admin > Manage currencies --------------------------------
 
@@ -672,7 +631,7 @@ q_adm_ccy_reviewtbl <- reactive({
     )
 })
 output$adm_ccy_reviewtbl <- DT::renderDataTable(q_adm_ccy_reviewtbl(),
-                                                options = list(searching=F, paging=F),
+                                                options = list(searching=F, paging=F, scrollX = T),
                                                 rownames=F)
 
 observeEvent(input$adm_ccy_add_btn, {
@@ -717,7 +676,7 @@ q_adm_invtr_reviewtbl <- reactive({
     )
 })
 output$adm_invtr_reviewtbl <- DT::renderDataTable(q_adm_invtr_reviewtbl(),
-                                                  options = list(searching=F, paging=F),
+                                                  options = list(searching=F, paging=F, scrollX = T),
                                                   rownames=F)
 
 observeEvent(input$adm_invtr_add_btn,{
@@ -801,6 +760,17 @@ tabItems(
 
 tabItem(tabName = "funds_ov",
         h2("Funds", tags$small("Overview")),
+        fluidRow(
+            box(title = "Portfolio Distribution",
+                solidHeader = T,
+                width = 12, 
+                status="primary",
+                column(6,
+                       plotlyOutput("funds_ov_lt_pf_piechart")),
+                column(6,
+                       plotlyOutput("funds_ov_st_pf_piechart"))
+            )
+        ),
         fluidRow(
             box(title="Detailed Portfolio Statement",
                 solidHeader = T,
@@ -1005,51 +975,6 @@ tabItem(tabName = "adm_fund",
 
 tabItem(tabName = "adm_fundprices",
         h2("Administration", tags$small("Manage fund prices")),
-        # fluidRow(box(width = 6,
-        #              title = "Import Aegon Fund Prices",
-        #              solidHeader = T, status = "danger",
-        #              p("This module imports prices of funds managed by ",tags$a(href="http://www.aegonalapkezelo.hu","Aegon Asset Management.")),
-        #              actionButton("adm_fundprices_upl_btn",
-        #                           "Import", 
-        #                           icon("database"))
-        #              )
-        #          ),
-        # fluidRow(shinyjs::hidden(
-        #                 div(id="adm_fundprices_preload_reviewtbl",
-        #                     box(width=12,
-        #                         status="success",
-        #                         title="Review the list of prices to be added",
-        #                         solidHeader = T,
-        #                         DT::dataTableOutput("adm_fundprices_pre_out_df"),
-        #                         br(),
-        #                         actionButton("adm_fundprices_imp_add_db_btn", 
-        #                                      "Add to database",
-        #                                      icon("plus")
-        #                                      ),
-        #                         actionButton("adm_fundprices_imp_add_db_cancel_btn", 
-        #                                      "Cancel"
-        #                         )
-        #                         )
-        #                     )
-        #             ),
-        #          column(width = 12,
-        #                 shinyjs::hidden(
-        #                     div(id="adm_fundprices_add_confirm",
-        #                         class="alert alert-success",
-        #                         role="alert",
-        #                         tags$b(icon("check"),"Fund prices have been added successfully.")
-        #                     )
-        #                 ),
-        #                 shinyjs::hidden(
-        #                     div(id="adm_fundprices_add_error",
-        #                         class="alert alert-danger",
-        #                         role="alert",
-        #                         h4(icon("exclamation"),"Error"),
-        #                         p(textOutput("adm_fundprices_add_error_txt"))
-        #                     )
-        #                  )
-        #                 )
-        #          ),
         fluidRow(
             box(DT::dataTableOutput("adm_fundprices_reviewtbl"),
                 width = 12)
