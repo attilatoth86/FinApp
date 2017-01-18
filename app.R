@@ -98,53 +98,7 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
                   INNER JOIN app.fund_price_recent_vw fpr ON fit.fund_id=fpr.fund_id
                   ORDER BY fit.value_date DESC, fit.account_id")$result
     )
-    
-    # performance details aggregated to fund level
-    df_fundportf_fund_details <- rbind(
-        data.frame('Fund'=character(),
-                   'PurchasedShares'=integer(),
-                   'InvestedAmount'=integer(),
-                   'MarketValue'=integer(),
-                   'Income/Loss'=integer(),
-                   'AverageBalance'=integer(),
-                   'AnnualizedYield%'=double()),
-        psqlQuery("SELECT 
-                    t1.fund_name \"Fund\",
-                    t1.purchasedshares \"PurchasedShares\",
-                    t1.investedamount \"InvestedAmount\",
-                    t1.marketvalue \"MarketValue\",
-                    t1.incomeloss \"Income/Loss\",
-                    ROUND(t2.avg_bal) \"AverageBalance\",
-                    ROUND(CAST((((t2.avg_bal+t1.incomeloss)/t2.avg_bal)^(365.0/t2.tot_period)-1)*100 AS DECIMAL),2) \"AnnualizedYield%\"
-                    FROM
-                    (
-                    SELECT
-                    fit.fund_id,
-                    fit.fund_name,
-                    SUM(fit.share_amount) purchasedshares,
-                    SUM(ROUND(fit.tr_value)) investedamount,
-                    SUM(ROUND(fpr.price*fit.share_amount)) marketvalue,
-                    SUM(ROUND(fpr.price*fit.share_amount)-ROUND(fit.tr_value)) incomeloss
-                    FROM 
-                    app.fund_investment_transaction_vw fit
-                    ,app.fund_price_recent_vw fpr
-                    WHERE fit.fund_id=fpr.fund_id
-                    GROUP BY
-                    fit.fund_id,
-                    fit.fund_name
-                    ) t1,
-                    (
-                    SELECT 
-                    v.fund_id,
-                    SUM(v.valid_to-v.valid_from+1) tot_period,
-                    SUM((v.valid_to-v.valid_from+1)*balance)/SUM(v.valid_to-v.valid_from+1) avg_bal
-                    FROM app.fund_inv_tr_fund_bal_vw v
-                    GROUP BY
-                    v.fund_id
-                    ) t2
-                    WHERE t1.fund_id=t2.fund_id")$result
-        )
-    
+
     # performance details aggregated to account level
     df_fundportf_acc_details <- rbind(
         data.frame('Account'=character(),
@@ -222,18 +176,18 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
                     fit.fund_name")$result
     )
     
+    val_total_fund_inv <- psqlQuery("SELECT SUM(ROUND(tr_value)) FROM app.fund_investment_transaction_vw")$result
+    val_total_gross_yield <- psqlQuery("SELECT SUM(ROUND(fit.share_amount*fp.price)-ROUND(fit.tr_value)) FROM app.fund_investment_transaction_vw fit, app.fund_price_recent_vw fp WHERE fit.fund_id=fp.fund_id")$result
+    
     list(out_details=df_fundportf_details,
-         out_fund_details=df_fundportf_fund_details,
          out_acc_details=df_fundportf_acc_details,
          out_piechart_lt_pf=df_piechart_lt_portf,
-         out_piechart_st_pf=df_piechart_st_portf)
+         out_piechart_st_pf=df_piechart_st_portf,
+         out_tot_fund_inv=val_total_fund_inv[1,1],
+         out_tot_gross_yield=val_total_gross_yield[1,1])
 })
 
 output$funds_ov_portf_statem_reviewtbl <- DT::renderDataTable(q_funds_ov_portf_statem_reviewtbl()$out_details,
-                                                              options = list(searching=F, paging=F, scrollX = T),
-                                                              rownames=F)
-
-output$funds_ov_portf_statem_fund_reviewtbl <- DT::renderDataTable(q_funds_ov_portf_statem_reviewtbl()$out_fund_details,
                                                               options = list(searching=F, paging=F, scrollX = T),
                                                               rownames=F)
 
@@ -243,7 +197,7 @@ output$funds_ov_portf_statem_acc_reviewtbl <- DT::renderDataTable(q_funds_ov_por
 
 output$funds_ov_lt_pf_piechart <- renderPlotly(
     plot_ly() %>% 
-        add_pie(data=q_funds_ov_portf_statem_reviewtbl()$out_piechart_lt_pf, labels = ~fund_name, values = ~val) %>% 
+        add_pie(data=q_funds_ov_portf_statem_reviewtbl()$out_piechart_lt_pf, labels = ~fund_name, values = ~val, showlegend = FALSE) %>% 
         layout(title = 'Long-term Portfolio',
                xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
                yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
@@ -251,11 +205,13 @@ output$funds_ov_lt_pf_piechart <- renderPlotly(
 
 output$funds_ov_st_pf_piechart <- renderPlotly(
     plot_ly() %>% 
-        add_pie(data=q_funds_ov_portf_statem_reviewtbl()$out_piechart_st_pf, labels = ~fund_name, values = ~val) %>% 
+        add_pie(data=q_funds_ov_portf_statem_reviewtbl()$out_piechart_st_pf, labels = ~fund_name, values = ~val, showlegend = FALSE) %>% 
         layout(title = 'Short-term Portfolio',
                xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
                yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
 )
+output$funds_ov_tot_fund_inv <- renderText(format(q_funds_ov_portf_statem_reviewtbl()$out_tot_fund_inv, big.mark=" "))
+output$funds_ov_tot_gross_yield <- renderText(format(q_funds_ov_portf_statem_reviewtbl()$out_tot_gross_yield, big.mark=" "))
 
 
 # SERV: Funds > Fund Prices -----------------------------------------------
@@ -761,6 +717,23 @@ tabItems(
 tabItem(tabName = "funds_ov",
         h2("Funds", tags$small("Overview")),
         fluidRow(
+            column(width = 4,
+                   valueBox(value = textOutput("funds_ov_tot_fund_inv"), 
+                            "Total Fund Investment To Date (HUF)", 
+                            icon = icon("money"),
+                            width = NULL,
+                            color = "light-blue")
+                   ),
+            column(width = 4,
+                   valueBox(value = textOutput("funds_ov_tot_gross_yield"),
+                            "Total Gross Yield (HUF)",
+                            icon = icon("bar-chart"),
+                            width = NULL,
+                            color = "green")
+                
+            )
+        ),
+        fluidRow(
             box(title = "Portfolio Distribution",
                 solidHeader = T,
                 width = 12, 
@@ -775,8 +748,6 @@ tabItem(tabName = "funds_ov",
             box(title="Detailed Portfolio Statement",
                 solidHeader = T,
                 DT::dataTableOutput("funds_ov_portf_statem_acc_reviewtbl"),
-                br(),br(),
-                DT::dataTableOutput("funds_ov_portf_statem_fund_reviewtbl"),
                 br(),br(),
                 DT::dataTableOutput("funds_ov_portf_statem_reviewtbl"),
                 width = 12, 
