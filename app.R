@@ -141,48 +141,88 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
                   ) t2
                   WHERE t1.account_id=t2.account_id")$result
         )
+
+    # performance details aggregated to portfolio level
+    df_fundportf_portfolio_lvl <- rbind(
+        data.frame('Portfolio'=character(),
+                   'InvestedAmount'=integer(),
+                   'MarketValue'=integer(),
+                   'Income/Loss'=integer(),
+                   'AverageBalance'=integer(),
+                   'AnnualizedYield%'=double()),
+        psqlQuery("SELECT 
+                  t2.portfolio_name \"Portfolio\",
+                  t1.investedamount \"InvestedAmount\",
+                  t1.marketvalue \"MarketValue\",
+                  t1.incomeloss \"Income/Loss\",
+                  ROUND(t2.avg_bal) \"AverageBalance\",
+                  ROUND(CAST((((t2.avg_bal+t1.incomeloss)/t2.avg_bal)^(365.0/t2.tot_period)-1)*100 AS DECIMAL),2) \"AnnualizedYield%\"
+                  FROM
+                  (
+                  SELECT
+                  pxa.portfolio_id,
+                  SUM(ROUND(fit.tr_value)) investedamount,
+                  SUM(ROUND(fpr.price*fit.share_amount)) marketvalue,
+                  SUM(ROUND(fpr.price*fit.share_amount)-ROUND(fit.tr_value)) incomeloss
+                  FROM 
+                  app.fund_investment_transaction_vw fit
+                  ,app.fund_price_recent_vw fpr
+                  ,app.portfolio_x_account_rltnp pxa
+                  WHERE fit.fund_id=fpr.fund_id AND fit.account_id=pxa.account_id
+                  GROUP BY
+                  pxa.portfolio_id
+                  ) t1,
+                  (
+                  SELECT 
+                  v.portfolio_id,
+                  v.portfolio_name,
+                  SUM(v.valid_to-v.valid_from+1) tot_period,
+                  SUM((v.valid_to-v.valid_from+1)*balance)/SUM(v.valid_to-v.valid_from+1) avg_bal
+                  FROM app.fund_inv_tr_portfolio_bal_vw v
+                  GROUP BY
+                  v.portfolio_id,
+                  v.portfolio_name
+                  ) t2
+                  WHERE t1.portfolio_id=t2.portfolio_id")$result
+    )
     
-    # Long term portfolio pie chart
-    df_piechart_lt_portf <- rbind(
-        data.frame(fund_name=character(),
+    # Portfolio pie charts
+    df_piechart_portfolio <- rbind(
+        data.frame(portfolio_id=integer(),
+                   portfolio_name=character(),
+                   fund_name=character(),
                    val=double()),
         psqlQuery("SELECT 
+                    p.id portfolio_id,
+                    p.name portfolio_name,
                     fit.fund_name,
                     SUM(fit.share_amount*fp.price) val
                     FROM 
                     app.fund_investment_transaction_vw fit,
-                    app.fund_price_recent_vw fp
+                    app.fund_price_recent_vw fp,
+                    app.portfolio_x_account_rltnp pxa,
+                    app.portfolio p
                     WHERE 1=1
                     AND fit.fund_id=fp.fund_id
-                    AND fit.account_name like '%TBSZ%'
+                    AND fit.account_id=pxa.account_id
+                    AND pxa.portfolio_id=p.id
                     GROUP BY
+                    p.id,
+                    p.name,
+                    fit.fund_name
+                    ORDER BY
+                    p.id,
+                    p.name,
                     fit.fund_name")$result
     )
-    
-    # Short term portfolio pie chart
-    df_piechart_st_portf <- rbind(
-        data.frame(fund_name=character(),
-                   val=double()),
-        psqlQuery("SELECT 
-                    fit.fund_name,
-                    SUM(fit.share_amount*fp.price) val
-                    FROM 
-                    app.fund_investment_transaction_vw fit,
-                    app.fund_price_recent_vw fp
-                    WHERE 1=1
-                    AND fit.fund_id=fp.fund_id
-                    AND fit.account_name not like '%TBSZ%'
-                    GROUP BY
-                    fit.fund_name")$result
-    )
-    
+
     val_total_fund_inv <- psqlQuery("SELECT SUM(ROUND(tr_value)) FROM app.fund_investment_transaction_vw")$result
     val_total_gross_yield <- psqlQuery("SELECT SUM(ROUND(fit.share_amount*fp.price)-ROUND(fit.tr_value)) FROM app.fund_investment_transaction_vw fit, app.fund_price_recent_vw fp WHERE fit.fund_id=fp.fund_id")$result
     
     list(out_details=df_fundportf_details,
          out_acc_details=df_fundportf_acc_details,
-         out_piechart_lt_pf=df_piechart_lt_portf,
-         out_piechart_st_pf=df_piechart_st_portf,
+         out_portfolio_lvl=df_fundportf_portfolio_lvl,
+         out_piechart_portf=df_piechart_portfolio,
          out_tot_fund_inv=val_total_fund_inv[1,1],
          out_tot_gross_yield=val_total_gross_yield[1,1])
 })
@@ -195,21 +235,36 @@ output$funds_ov_portf_statem_acc_reviewtbl <- DT::renderDataTable(q_funds_ov_por
                                                                       options = list(searching=F, paging=F, scrollX = T),
                                                                       rownames=F)
 
-output$funds_ov_lt_pf_piechart <- renderPlotly(
-    plot_ly() %>% 
-        add_pie(data=q_funds_ov_portf_statem_reviewtbl()$out_piechart_lt_pf, labels = ~fund_name, values = ~val, showlegend = FALSE) %>% 
-        layout(title = 'Long-term Portfolio',
-               xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
-               yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
-)
+output$funds_ov_portf_statem_portf_lvl_reviewtbl <- DT::renderDataTable(q_funds_ov_portf_statem_reviewtbl()$out_portfolio_lvl,
+                                                                  options = list(searching=F, paging=F, scrollX = T),
+                                                                  rownames=F)
 
-output$funds_ov_st_pf_piechart <- renderPlotly(
-    plot_ly() %>% 
-        add_pie(data=q_funds_ov_portf_statem_reviewtbl()$out_piechart_st_pf, labels = ~fund_name, values = ~val, showlegend = FALSE) %>% 
-        layout(title = 'Short-term Portfolio',
-               xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
-               yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
-)
+lapply(isolate(unique(q_funds_ov_portf_statem_reviewtbl()$out_piechart_portf[,1])), function(i) {
+    df <- isolate(q_funds_ov_portf_statem_reviewtbl()$out_piechart_portf)
+    data <- df[df$portfolio_id==i,]
+    output[[paste0("dyn_plot_portfolio_piechart_",i)]] <- renderPlotly(
+        plot_ly() %>% 
+            add_pie(data=data, labels = ~fund_name, values = ~val, showlegend = FALSE) %>% 
+            layout(title = unique(data$portfolio_name),
+                   xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+                   yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+    )
+    output[[paste0("dyn_ui_plot_portfolio_piechart_",i)]] <- renderUI({
+        column(6,
+               plotlyOutput(paste0("dyn_plot_portfolio_piechart_",i)))
+    })        
+})
+output$dyn_plot_ui_block_portfolio_piecharts <- renderUI({
+    box(title = "Portfolio Distribution",
+        solidHeader = T,
+        width = 12, 
+        status="primary",
+        lapply(isolate(unique(q_funds_ov_portf_statem_reviewtbl()$out_piechart_portf[,1])), function(i) {
+            uiOutput(paste0('dyn_ui_plot_portfolio_piechart_', i))
+        })
+    )
+})
+
 output$funds_ov_tot_fund_inv <- renderText(format(q_funds_ov_portf_statem_reviewtbl()$out_tot_fund_inv, big.mark=" "))
 output$funds_ov_tot_gross_yield <- renderText(format(q_funds_ov_portf_statem_reviewtbl()$out_tot_gross_yield, big.mark=" "))
 
@@ -733,26 +788,18 @@ tabItem(tabName = "funds_ov",
                 
             )
         ),
-        fluidRow(
-            box(title = "Portfolio Distribution",
-                solidHeader = T,
-                width = 12, 
-                status="primary",
-                column(6,
-                       plotlyOutput("funds_ov_lt_pf_piechart")),
-                column(6,
-                       plotlyOutput("funds_ov_st_pf_piechart"))
-            )
-        ),
+        fluidRow(uiOutput("dyn_plot_ui_block_portfolio_piecharts")),
         fluidRow(
             box(title="Detailed Portfolio Statement",
                 solidHeader = T,
+                DT::dataTableOutput("funds_ov_portf_statem_portf_lvl_reviewtbl"),
+                br(),br(),
                 DT::dataTableOutput("funds_ov_portf_statem_acc_reviewtbl"),
                 br(),br(),
                 DT::dataTableOutput("funds_ov_portf_statem_reviewtbl"),
                 width = 12, 
                 status="primary")
-        )
+            )
         ),
 
 # UI: Fund > Fund Prices --------------------------------------------------
