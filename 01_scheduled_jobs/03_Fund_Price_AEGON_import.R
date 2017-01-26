@@ -11,11 +11,9 @@ message("Other setups..")
 options(scipen = 999, digits = 4, encoding = "iso-8859-2")
 
 message("Creating import control table..")
-fp_import_ctrltbl <- psqlQuery("SELECT f.id fund_id, f.fund_name, f.source_id, MIN(COALESCE(fpv.value_date,fit.value_date-1))+1 import_date_from
-                               FROM app.fund_investment_transaction fit
-                               INNER JOIN app.fund f ON fit.fund_id=f.id
-                               LEFT OUTER JOIN app.fund_price_recent_vw fpv ON fit.fund_id=fpv.fund_id
-                               GROUP BY f.id, f.fund_name, f.source_id")$result
+fp_import_ctrltbl <- psqlQuery("SELECT f.id fund_id, f.fund_name, f.source_id, COALESCE(fpv.value_date,f.inception_date-1)+1 import_date_from
+                               FROM app.fund f
+                               LEFT OUTER JOIN app.fund_price_recent_vw fpv ON f.id=fpv.fund_id")$result
 
 message("Content of control table:")
 print(fp_import_ctrltbl)
@@ -64,14 +62,7 @@ finalInsertStatus <- psqlQuery("INSERT INTO app.fund_price (fund_id,value_date,p
                                FROM app.ld_fund_price ldfp
                                LEFT OUTER JOIN app.fund_price fp ON ldfp.fund_id::int=fp.fund_id
                                AND to_date(ldfp.date, 'yyyy-mm-dd')=fp.value_date
-                               LEFT OUTER JOIN (SELECT f.id fund_id, MIN(COALESCE(fpv.value_date,fit.value_date-1))+1 import_date_from
-                               FROM app.fund_investment_transaction fit
-                               INNER JOIN app.fund f ON fit.fund_id=f.id
-                               LEFT OUTER JOIN app.fund_price_recent_vw fpv ON fit.fund_id=fpv.fund_id
-                               GROUP BY f.id) t ON ldfp.fund_id::int=t.fund_id
-                               WHERE fp.id IS NULL
-                               AND to_date(ldfp.date, 'yyyy-mm-dd')>=t.import_date_from
-                               ORDER BY ldfp.date DESC, ldfp.fund_id")
+                               WHERE fp.id IS NULL")
 
 message(paste("Insert into app.fund_price..",finalInsertStatus$errorMsg))
 
