@@ -238,6 +238,9 @@ output$funds_ov_portf_statem_acc_reviewtbl <- DT::renderDataTable(q_funds_ov_por
 output$funds_ov_portf_statem_portf_lvl_reviewtbl <- DT::renderDataTable(q_funds_ov_portf_statem_reviewtbl()$out_portfolio_lvl,
                                                                   options = list(searching=F, paging=F, scrollX = T),
                                                                   rownames=F)
+# observe({
+#     tmp_df<-q_funds_ov_portf_statem_reviewtbl()$out_piechart_portf    
+# })
 
 lapply(isolate(unique(q_funds_ov_portf_statem_reviewtbl()$out_piechart_portf[,1])), function(i) {
     df <- isolate(q_funds_ov_portf_statem_reviewtbl()$out_piechart_portf)
@@ -511,26 +514,29 @@ q_adm_fund_reviewtbl <- reactive({
                      "CurrencyID"=integer(),
                      "SourceID"=character(),
                      "LastModification"=character(),
+                     "InceptionDate"=character(),
                      stringsAsFactors = F),
           psqlQuery("SELECT id \"FundID\", fund_name \"FundName\", isin \"ISIN\", currency_id \"CurrencyID\", source_id \"SourceID\", 
-                    to_char(last_modification,'YYYY-MM-DD HH24:MI:SS') \"LastModification\" FROM app.fund ORDER BY id")$result
+                    to_char(last_modification,'YYYY-MM-DD HH24:MI:SS') \"LastModification\", to_char(inception_date,'YYYY-MM-DD') \"InceptionDate\" FROM app.fund ORDER BY id")$result
     )
 })
 output$adm_fund_reviewtbl <- DT::renderDataTable(q_adm_fund_reviewtbl(), options=list(searching=F, paging=F, scrollX = T), 
                                                  rownames=F)
 
 observeEvent(input$adm_fund_add_btn,{
-    adm_fund_add_btn_queryOut <- psqlQuery(sprintf("INSERT INTO app.fund (fund_name, isin, currency_id, source_id) 
-                                                   VALUES ('%s','%s',%i,'%s')",
+    adm_fund_add_btn_queryOut <- psqlQuery(sprintf("INSERT INTO app.fund (fund_name, isin, currency_id, source_id, inception_date) 
+                                                   VALUES ('%s','%s',%i,'%s','%s')",
                                                    input$adm_fund_add_name,
                                                    input$adm_fund_add_isin,
                                                    as.integer(input$adm_fund_add_ccy),
-                                                   input$adm_fund_add_srcid)
+                                                   input$adm_fund_add_srcid,
+                                                   input$adm_fund_add_inceptiondate)
                                         )
     shinyjs::reset("adm_fund_add_name")
     shinyjs::reset("adm_fund_add_isin")
     shinyjs::reset("adm_fund_add_ccy")
     shinyjs::reset("adm_fund_add_srcid")
+    shinyjs::reset("adm_fund_add_inceptiondate")
     shinyjs::hide("adm_fund_add_confirm")
     shinyjs::hide("adm_fund_add_error")
     
@@ -962,6 +968,7 @@ tabItem(tabName = "adm_fund",
                     textInput("adm_fund_add_name","Fund Name"),
                     textInput("adm_fund_add_isin","ISIN Code"),
                     textInput("adm_fund_add_srcid","Source ID"),
+                    dateInput("adm_fund_add_inceptiondate","Inception Date",format="yyyy-mm-dd"),
                     uiOutput("adm_fund_add_ccy_selector"),
                     actionButton("adm_fund_add_btn","Add",icon("plus"))
                 ),
