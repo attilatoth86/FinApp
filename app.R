@@ -291,6 +291,7 @@ q_fundprices_df <- reactive({
                               (fp.price/first_value(price) OVER (PARTITION BY f.id ORDER BY fp.value_date)-1)*100 change_pct, fit.value_date purchase
                               FROM app.fund_price fp 
                               INNER JOIN app.fund f ON fp.fund_id=f.id
+                              INNER JOIN (SELECT fund_id, MIN(value_date) value_date FROM app.fund_investment_transaction GROUP BY fund_id) tmp ON fp.fund_id=tmp.fund_id AND fp.value_date>=tmp.value_date
                               LEFT OUTER JOIN app.fund_investment_transaction fit ON fp.fund_id=fit.fund_id AND fp.value_date=fit.value_date
                               ) t")$result
     fundprice_df$value_date <- as.Date(fundprice_df$value_date, "%Y-%m-%d")
