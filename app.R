@@ -70,7 +70,6 @@ output$adm_invtr_add_fund_selector <- shiny::renderUI(selectInput("adm_invtr_add
 # SERV: Funds > Overview --------------------------------------------------
 
 q_funds_ov_portf_statem_reviewtbl <- reactive({
-    input$adm_fundprices_imp_add_db_btn
     input$adm_invtr_add_btn
     
     # performance details on every single investment transaction
@@ -215,7 +214,7 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
                     p.name,
                     fit.fund_name")$result
     )
-
+    
     val_total_fund_inv <- psqlQuery("SELECT SUM(ROUND(tr_value)) FROM app.fund_investment_transaction_vw")$result
     val_total_gross_yield <- psqlQuery("SELECT SUM(ROUND(fit.share_amount*fp.price)-ROUND(fit.tr_value)) FROM app.fund_investment_transaction_vw fit, app.fund_price_recent_vw fp WHERE fit.fund_id=fp.fund_id")$result
     
@@ -275,7 +274,6 @@ output$funds_ov_tot_gross_yield <- renderText(format(q_funds_ov_portf_statem_rev
 # SERV: Funds > Fund Prices -----------------------------------------------
 
 q_fundprices_df <- reactive({
-    input$adm_fundprices_imp_add_db_btn
     input$adm_invtr_add_btn
     fundprice_df <- psqlQuery("SELECT 
                               t.id, 
@@ -557,7 +555,6 @@ observeEvent(input$adm_fund_add_btn,{
 # SERV: Admin > Manage fund prices --------------------
 
 q_adm_fundprices_reviewtbl <- reactive({
-    input$adm_fundprices_imp_add_db_btn
     rbind(data.frame("PriceID"=integer(),
                      "ValueDate"=character(),
                      "FundID"=integer(),
