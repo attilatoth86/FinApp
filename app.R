@@ -218,12 +218,50 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
     val_total_fund_inv <- psqlQuery("SELECT SUM(ROUND(tr_value)) FROM app.fund_investment_transaction_vw")$result
     val_total_gross_yield <- psqlQuery("SELECT SUM(ROUND(fit.share_amount*fp.price)-ROUND(fit.tr_value)) FROM app.fund_investment_transaction_vw fit, app.fund_price_recent_vw fp WHERE fit.fund_id=fp.fund_id")$result
     
+    df_portfolio_performance_timeseries <-psqlQuery("
+                                            SELECT
+                                                tt.portfolio_id, tt.portfolio, tt.date, tt.accumulated_yield, tt.cumulative_balance,
+                                                --SUM(days) OVER (PARTITION BY tt.portfolio ORDER BY tt.date),
+                                                --SUM(w) OVER (PARTITION BY tt.portfolio ORDER BY tt.date),
+                                                ROUND(SUM(w) OVER (PARTITION BY tt.portfolio ORDER BY tt.date)/SUM(days) OVER (PARTITION BY tt.portfolio ORDER BY tt.date)) average_balance,
+                                                tt.accumulated_yield/ROUND(SUM(w) OVER (PARTITION BY tt.portfolio ORDER BY tt.date)/SUM(days) OVER (PARTITION BY tt.portfolio ORDER BY tt.date))*100 yield_pct
+                                            FROM
+                                                (
+                                                SELECT 
+                                                    t.*,
+                                                    --COALESCE(LEAD(t.date) OVER (PARTITION BY t.portfolio ORDER BY t.date),t.date+1) date_next,
+                                                    COALESCE(LEAD(t.date) OVER (PARTITION BY t.portfolio ORDER BY t.date),t.date+1)-t.date days,
+                                                    (COALESCE(LEAD(t.date) OVER (PARTITION BY t.portfolio ORDER BY t.date),t.date+1)-t.date)*cumulative_balance w
+                                                FROM
+                                                    (
+                                                    SELECT 
+                                                        p.id portfolio_id,
+                                                        p.name portfolio,
+                                                        fp.value_date date,
+                                                        SUM(ROUND(fit.share_amount*fp.price)-ROUND(fit.tr_value)) accumulated_yield,
+                                                        SUM(ROUND(fit.tr_value)) cumulative_balance
+                                                    FROM
+                                                        app.fund_investment_transaction_vw fit,
+                                                        app.fund_price fp,
+                                                        app.portfolio_x_account_rltnp pxa,
+                                                        app.portfolio p
+                                                    WHERE 1=1
+                                                        AND fit.account_id=pxa.account_id
+                                                        AND pxa.portfolio_id=p.id
+                                                        AND fit.fund_id=fp.fund_id
+                                                        AND fit.value_date<=fp.value_date
+                                                    GROUP BY p.id, p.name, fp.value_date
+                                                    ) t
+                                                ) tt
+                                                    ")$result
+    
     list(out_details=df_fundportf_details,
          out_acc_details=df_fundportf_acc_details,
          out_portfolio_lvl=df_fundportf_portfolio_lvl,
          out_piechart_portf=df_piechart_portfolio,
          out_tot_fund_inv=val_total_fund_inv[1,1],
-         out_tot_gross_yield=val_total_gross_yield[1,1])
+         out_tot_gross_yield=val_total_gross_yield[1,1],
+         out_portf_perf_ts=df_portfolio_performance_timeseries)
 })
 
 output$funds_ov_portf_statem_reviewtbl <- DT::renderDataTable(q_funds_ov_portf_statem_reviewtbl()$out_details,
@@ -269,6 +307,21 @@ output$dyn_plot_ui_block_portfolio_piecharts <- renderUI({
 
 output$funds_ov_tot_fund_inv <- renderText(format(q_funds_ov_portf_statem_reviewtbl()$out_tot_fund_inv, big.mark=" "))
 output$funds_ov_tot_gross_yield <- renderText(format(q_funds_ov_portf_statem_reviewtbl()$out_tot_gross_yield, big.mark=" "))
+
+output$funds_ov_portf_perf_ts_yield <- renderPlotly(plot_ly() %>% 
+                                                    add_trace(data=q_funds_ov_portf_statem_reviewtbl()$out_portf_perf_ts, x=~date, y=~accumulated_yield, type='scatter', mode='lines', fill='tozeroy', color=~portfolio, showlegend = FALSE) %>%
+                                                        layout(title = "Cummulative Yield",
+                                                               xaxis = list(showgrid=F, title=""),
+                                                               yaxis = list(showgrid=F, title="Yield Amount")
+                                                               )
+                                                        )
+output$funds_ov_portf_perf_ts_yieldpct <- renderPlotly(plot_ly() %>% 
+                                                           add_trace(data=q_funds_ov_portf_statem_reviewtbl()$out_portf_perf_ts, x=~date, y=~yield_pct, type='scatter', mode='lines', color=~portfolio, showlegend = FALSE) %>%
+                                                           layout(title = "Yield% Relative to Average Balance",
+                                                                  xaxis = list(showgrid=F, title=""),
+                                                                  yaxis = list(showgrid=F, title="Yield%")
+                                                           )
+                                                       )
 
 
 # SERV: Funds > Fund Prices -----------------------------------------------
@@ -797,6 +850,19 @@ tabItem(tabName = "funds_ov",
             )
         ),
         fluidRow(uiOutput("dyn_plot_ui_block_portfolio_piecharts")),
+        fluidRow(
+            box(title="Portfolio Performance",
+                solidHeader=T,
+                width=12,
+                status="primary",
+                column(width=6,
+                       plotlyOutput("funds_ov_portf_perf_ts_yield")
+                       ),
+                column(width=6,
+                       plotlyOutput("funds_ov_portf_perf_ts_yieldpct")
+                       )
+                )
+                 ),
         fluidRow(
             box(title="Detailed Portfolio Statement",
                 solidHeader = T,
