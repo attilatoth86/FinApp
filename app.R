@@ -224,7 +224,8 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
                                                 --SUM(days) OVER (PARTITION BY tt.portfolio ORDER BY tt.date),
                                                 --SUM(w) OVER (PARTITION BY tt.portfolio ORDER BY tt.date),
                                                 ROUND(SUM(w) OVER (PARTITION BY tt.portfolio ORDER BY tt.date)/SUM(days) OVER (PARTITION BY tt.portfolio ORDER BY tt.date)) average_balance,
-                                                tt.accumulated_yield/ROUND(SUM(w) OVER (PARTITION BY tt.portfolio ORDER BY tt.date)/SUM(days) OVER (PARTITION BY tt.portfolio ORDER BY tt.date))*100 yield_pct
+                                                tt.accumulated_yield/ROUND(SUM(w) OVER (PARTITION BY tt.portfolio ORDER BY tt.date)/SUM(days) OVER (PARTITION BY tt.portfolio ORDER BY tt.date))*100 yield_pct,
+                                                ((((tt.accumulated_yield+(ROUND(SUM(w) OVER (PARTITION BY tt.portfolio ORDER BY tt.date)/SUM(days) OVER (PARTITION BY tt.portfolio ORDER BY tt.date))))/(ROUND(SUM(w) OVER (PARTITION BY tt.portfolio ORDER BY tt.date)/SUM(days) OVER (PARTITION BY tt.portfolio ORDER BY tt.date))))^(365.0/SUM(days) OVER (PARTITION BY tt.portfolio ORDER BY tt.date)))-1)*100 ann_yield_pct
                                             FROM
                                                 (
                                                 SELECT 
@@ -316,8 +317,8 @@ output$funds_ov_portf_perf_ts_yield <- renderPlotly(plot_ly() %>%
                                                                )
                                                         )
 output$funds_ov_portf_perf_ts_yieldpct <- renderPlotly(plot_ly() %>% 
-                                                           add_trace(data=q_funds_ov_portf_statem_reviewtbl()$out_portf_perf_ts, x=~date, y=~yield_pct, type='scatter', mode='lines', color=~portfolio, showlegend = FALSE) %>%
-                                                           layout(title = "Yield% Relative to Average Balance",
+                                                           add_trace(data=q_funds_ov_portf_statem_reviewtbl()$out_portf_perf_ts, x=~date, y=~ann_yield_pct, type='scatter', mode='lines', color=~portfolio, showlegend = FALSE) %>%
+                                                           layout(title = "Change of Annualized Yield%",
                                                                   xaxis = list(showgrid=F, title=""),
                                                                   yaxis = list(showgrid=F, title="Yield%")
                                                            )
