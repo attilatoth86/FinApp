@@ -4,8 +4,10 @@ message(paste("Job starts:",Sys.time()))
 message("Importing necessary packages..")
 library(xlsx)
 
+message("Importing functions..")
+source("/srv/shiny-server/finapp/f.R")
+
 message("Other setups..")
-source("f.R")
 options(scipen = 999, digits = 4, encoding = "iso-8859-2")
 
 retrieve_url <- "http://www.akk.hu/hu/statisztika/hozamok-indexek-forgalmi-adatok/zerokupon-hozamgorbe?download=1"
