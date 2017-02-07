@@ -40,7 +40,10 @@ finalInsertStatus <- psqlQuery("INSERT INTO app.yield_curve (currency_id, tenor,
                                    to_date(ldyc.date,'yyyy-mm-dd'),
                                    ldyc.yield::DOUBLE PRECISION
                                    FROM app.ld_yield_curve ldyc
-                                   LEFT OUTER JOIN app.yield_curve yc ON ldyc.currency_id::INT=yc.currency_id AND ldyc.tenor::DOUBLE PRECISION=yc.tenor AND ldyc.type=yc.type
+                                   LEFT OUTER JOIN app.yield_curve yc ON ldyc.currency_id::INT=yc.currency_id 
+                                                                      AND ldyc.tenor::DOUBLE PRECISION=yc.tenor 
+                                                                      AND ldyc.type=yc.type
+                                                                      AND to_date(ldyc.date,'yyyy-mm-dd')=yc.value_date
                                    WHERE yc.id IS NULL")
 
 message(paste("Insert into app.yield_curve..",finalInsertStatus$errorMsg))
