@@ -31,13 +31,22 @@ ldInsertStatus <- psqlInsert(ld_tbl_dump, "ld_rate_value")
 message(paste("Insert into app.ld_rate_value..",ldInsertStatus$errorMsg))
 
 finalInsertStatus <- psqlQuery("INSERT INTO app.rate_value (rate_id,value_date,value)
-                                  SELECT
-                                  r.id::int,
-                                  to_date(ldrv.value_date,'yyyy-mm-dd'),
-                                  ldrv.value::float
-                                  FROM
-                                  app.ld_rate_value ldrv
-                                  LEFT OUTER JOIN app.rate r ON ldrv.rate_name=r.rate_name")
+                                    SELECT 
+                                    t.* 
+                                    FROM
+                                        (
+                                        SELECT
+                                        r.id::int rate_id,
+                                        to_date(ldrv.value_date,'yyyy-mm-dd') value_date,
+                                        ldrv.value::float val
+                                        FROM
+                                        app.ld_rate_value ldrv
+                                        LEFT OUTER JOIN app.rate r ON ldrv.rate_name=r.rate_name
+                                        ) t
+                                    LEFT OUTER JOIN app.rate_value rv ON t.rate_id=rv.rate_id 
+                                                                      AND t.value_date=rv.value_date
+                                    WHERE rv.id IS NULL;
+                               ")
 
 message(paste("Insert into app.rate_value..",finalInsertStatus$errorMsg))
 
