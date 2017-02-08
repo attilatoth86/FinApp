@@ -30,7 +30,7 @@ message(paste("Truncate app.ld_rate_value..",truncateStatus$errorMsg))
 ldInsertStatus <- psqlInsert(ld_tbl_dump, "ld_rate_value")
 message(paste("Insert into app.ld_rate_value..",ldInsertStatus$errorMsg))
 
-finalInsertStatus <- psqlQuery("INSERT INTO INSERT INTO app.rate_value (rate_id,value_date,value)
+finalInsertStatus <- psqlQuery("INSERT INTO app.rate_value (rate_id,value_date,value)
                                   SELECT
                                   r.id::int,
                                   to_date(ldrv.value_date,'yyyy-mm-dd'),
