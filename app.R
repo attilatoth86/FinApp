@@ -92,7 +92,7 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
                   ROUND(fpr.price*fit.share_amount) \"MarketValue\", 
                   ROUND(fpr.price*fit.share_amount)-ROUND(fit.tr_value) \"Income/Loss\",
                   ROUND(CAST((fpr.price*fit.share_amount-fit.tr_value)/fit.tr_value*100 AS DECIMAL),2) \"Yield%\",
-                  ROUND(CAST(((fpr.price*fit.share_amount/fit.tr_value)^(365.0/(app.get_last_fundprice_date()::date-fit.value_date+1)::float)-1)*100 AS DECIMAL),2) \"AnnualizedYield%\"
+                  ROUND(CAST(((ROUND(fpr.price*fit.share_amount)/ROUND(fit.tr_value))^(365.0/(app.get_last_fundprice_date()::date-fit.value_date+1)::float)-1)*100 AS DECIMAL),2) \"AnnualizedYield%\"
                   FROM app.fund_investment_transaction_vw fit
                   INNER JOIN app.fund_price_recent_vw fpr ON fit.fund_id=fpr.fund_id
                   ORDER BY fit.value_date DESC, fit.account_id")$result
@@ -311,16 +311,16 @@ output$funds_ov_tot_gross_yield <- renderText(format(q_funds_ov_portf_statem_rev
 
 output$funds_ov_portf_perf_ts_yield <- renderPlotly(plot_ly() %>% 
                                                     add_trace(data=q_funds_ov_portf_statem_reviewtbl()$out_portf_perf_ts, x=~date, y=~accumulated_yield, type='scatter', mode='lines', fill='tozeroy', color=~portfolio, showlegend = FALSE) %>%
-                                                        layout(title = "Cummulative Yield",
+                                                        layout(title = "Cummulative Yield (HUF)",
                                                                xaxis = list(showgrid=F, title=""),
-                                                               yaxis = list(showgrid=F, title="Yield Amount")
+                                                               yaxis = list(showgrid=F, title="HUF")
                                                                )
                                                         )
 output$funds_ov_portf_perf_ts_yieldpct <- renderPlotly(plot_ly() %>% 
                                                            add_trace(data=q_funds_ov_portf_statem_reviewtbl()$out_portf_perf_ts, x=~date, y=~ann_yield_pct, type='scatter', mode='lines', color=~portfolio, showlegend = FALSE) %>%
-                                                           layout(title = "Change of Annualized Yield%",
+                                                           layout(title = "Change of Annualized Yield (%)",
                                                                   xaxis = list(showgrid=F, title=""),
-                                                                  yaxis = list(showgrid=F, title="Yield%")
+                                                                  yaxis = list(showgrid=F, title="%")
                                                            )
                                                        )
 
@@ -426,7 +426,25 @@ if(nrow(intrates_df)!=0){
                 y=~value, 
                 color=~rate_name,
                 mode="lines") %>%
-            layout(xaxis=list(title=""), yaxis=list(title="Value"))
+            layout(xaxis=list(title=""), yaxis=list(title="Interest Rate (%)"))
+    )
+}
+
+df_curr_yc <- psqlQuery("SELECT * FROM app.yield_curve_curr_vw")$result
+if(nrow(df_curr_yc)!=0){
+    df_curr_yc$type <- as.factor(df_curr_yc$type)
+    df_curr_yc$value_date <- as.Date(df_curr_yc$value_date,"%Y-%m-%d")
+    
+    output$plot_yieldcurve <- renderPlotly(
+        plot_ly() %>% 
+            add_trace(data=df_curr_yc, 
+                      x=~tenor, 
+                      y=~yield, 
+                      color=~type, 
+                      mode="lines") %>% 
+            layout(xaxis=list(title="Maturity (days)"), 
+                   yaxis=list(title="Interest Rate (%)"),
+                   showlegend = T)
     )
 }
 
@@ -908,7 +926,16 @@ tabItem(tabName = "macro_fx",
 tabItem(tabName = "macro_ir",
         h2("Macroeconomic Factors", tags$small("Interest Rates")),
         fluidRow(
-            box(
+            box(title = "Recent Yield Curves",
+                solidHeader = T,
+                plotlyOutput("plot_yieldcurve"),
+                width = 12,
+                status = "primary"
+            )
+        ),
+        fluidRow(
+            box(title = "Market Interest Rates",
+                solidHeader = T,
                 plotlyOutput("plot_intrates"),
                 width = 12,
                 status = "primary"
