@@ -430,7 +430,7 @@ if(nrow(intrates_df)!=0){
     )
 }
 
-df_curr_yc <- psqlQuery("SELECT * FROM app.yield_curve_curr_vw")$result
+df_curr_yc <- psqlQuery("SELECT * FROM app.yield_curve_curr_vw ORDER BY tenor ASC")$result
 if(nrow(df_curr_yc)!=0){
     df_curr_yc$type <- as.factor(df_curr_yc$type)
     df_curr_yc$value_date <- as.Date(df_curr_yc$value_date,"%Y-%m-%d")
