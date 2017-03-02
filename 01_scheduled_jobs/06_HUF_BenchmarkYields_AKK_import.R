@@ -57,6 +57,10 @@ finalInsertStatus <- psqlQuery("INSERT INTO app.yield_curve (currency_id, tenor,
 
 message(paste("Insert into app.yield_curve..",finalInsertStatus$errorMsg))
 
+refreshMatVw <- psqlQuery("REFRESH MATERIALIZED VIEW app.yield_curve_curr_mvw")
+
+message(paste("Refresh app.yield_curve_curr_mvw materialized view..",refreshMatVw$errorMsg))
+
 message(paste("Job ends:",Sys.time()))
 message("----------------------------------------")
 
