@@ -66,5 +66,9 @@ finalInsertStatus <- psqlQuery("INSERT INTO app.fund_price (fund_id,value_date,p
 
 message(paste("Insert into app.fund_price..",finalInsertStatus$errorMsg))
 
+refreshMatVw <- psqlQuery("REFRESH MATERIALIZED VIEW app.portfolio_return_calc_mvw")
+
+message(paste("Refresh app.portfolio_return_calc_mvw materialized view..",refreshMatVw$errorMsg))
+
 message(paste("Job ends:",Sys.time()))
 message("----------------------------------------")
