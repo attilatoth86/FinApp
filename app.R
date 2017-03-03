@@ -9,6 +9,7 @@ library(shinyjs)
 
 library(DT)
 
+library(PerformanceAnalytics)
 # init source() -----------------------------------------------------------
 
 source("f.R")
@@ -218,24 +219,7 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
     val_total_fund_inv <- psqlQuery("SELECT SUM(ROUND(tr_value)) FROM app.fund_investment_transaction_vw")$result
     val_total_gross_yield <- psqlQuery("SELECT SUM(ROUND(fit.share_amount*fp.price)-ROUND(fit.tr_value)) FROM app.fund_investment_transaction_vw fit, app.fund_price_recent_vw fp WHERE fit.fund_id=fp.fund_id")$result
     
-    df_portfolio_performance_timeseries <-psqlQuery("
-                                            SELECT
-                                                tt.portfolio_id, tt.portfolio, tt.date, tt.accumulated_yield, tt.cumulative_balance,
-                                                --SUM(days) OVER (PARTITION BY tt.portfolio ORDER BY tt.date),
-                                                --SUM(w) OVER (PARTITION BY tt.portfolio ORDER BY tt.date),
-                                                ROUND(SUM(w) OVER (PARTITION BY tt.portfolio ORDER BY tt.date)/SUM(days) OVER (PARTITION BY tt.portfolio ORDER BY tt.date)) average_balance,
-                                                tt.accumulated_yield/ROUND(SUM(w) OVER (PARTITION BY tt.portfolio ORDER BY tt.date)/SUM(days) OVER (PARTITION BY tt.portfolio ORDER BY tt.date))*100 yield_pct,
-                                                ((((tt.accumulated_yield+(ROUND(SUM(w) OVER (PARTITION BY tt.portfolio ORDER BY tt.date)/SUM(days) OVER (PARTITION BY tt.portfolio ORDER BY tt.date))))/(ROUND(SUM(w) OVER (PARTITION BY tt.portfolio ORDER BY tt.date)/SUM(days) OVER (PARTITION BY tt.portfolio ORDER BY tt.date))))^(365.0/SUM(days) OVER (PARTITION BY tt.portfolio ORDER BY tt.date)))-1)*100 ann_yield_pct
-                                            FROM
-                                                (
-                                                SELECT 
-                                                    t.*,
-                                                    --COALESCE(LEAD(t.date) OVER (PARTITION BY t.portfolio ORDER BY t.date),t.date+1) date_next,
-                                                    COALESCE(LEAD(t.date) OVER (PARTITION BY t.portfolio ORDER BY t.date),t.date+1)-t.date days,
-                                                    (COALESCE(LEAD(t.date) OVER (PARTITION BY t.portfolio ORDER BY t.date),t.date+1)-t.date)*cumulative_balance w
-                                                FROM
-                                                    (
-                                                    SELECT 
+    df_portfolio_performance_timeseries <-psqlQuery("SELECT 
                                                         p.id portfolio_id,
                                                         p.name portfolio,
                                                         fp.value_date date,
@@ -252,9 +236,25 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
                                                         AND fit.fund_id=fp.fund_id
                                                         AND fit.value_date<=fp.value_date
                                                     GROUP BY p.id, p.name, fp.value_date
-                                                    ) t
-                                                ) tt
                                                     ")$result
+    
+    df_tmp_portf_ann_return <- psqlQuery("SELECT portfolio, date, return FROM app.portfolio_return_calc_mvw WHERE return IS NOT NULL")$result
+    df_tmp_portf_ann_return$portfolio <- as.factor(df_tmp_portf_ann_return$portfolio)
+    
+    pf_idx <- unique(df_tmp_portf_ann_return$portfolio)
+    pf_tmp_res <- data.frame(portfolio=character(),date=as.Date(character()),ann_yield_pct=numeric())
+    for(i in 1:length(pf_idx)){
+        idx_inner <- unique(df_tmp_portf_ann_return[df_tmp_portf_ann_return$portfolio==pf_idx[i],"date"])
+        for(j in 1:length(idx_inner)){
+            pf_tmp_res <- rbind(pf_tmp_res,
+                         data.frame(
+                             portfolio=pf_idx[i],
+                             date=idx_inner[j],
+                             ann_yield_pct=Return.annualized(df_tmp_portf_ann_return[df_tmp_portf_ann_return$portfolio==pf_idx[i],][1:j,"return"],
+                                                          scale = 252, geometric = T)*100
+                         ),stringsAsFactors = F)
+        }
+    }
     
     list(out_details=df_fundportf_details,
          out_acc_details=df_fundportf_acc_details,
@@ -262,7 +262,8 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
          out_piechart_portf=df_piechart_portfolio,
          out_tot_fund_inv=val_total_fund_inv[1,1],
          out_tot_gross_yield=val_total_gross_yield[1,1],
-         out_portf_perf_ts=df_portfolio_performance_timeseries)
+         out_portf_perf_ts=df_portfolio_performance_timeseries,
+         out_portf_perf_annreturn_ts=pf_tmp_res)
 })
 
 output$funds_ov_portf_statem_reviewtbl <- DT::renderDataTable(q_funds_ov_portf_statem_reviewtbl()$out_details,
@@ -276,9 +277,6 @@ output$funds_ov_portf_statem_acc_reviewtbl <- DT::renderDataTable(q_funds_ov_por
 output$funds_ov_portf_statem_portf_lvl_reviewtbl <- DT::renderDataTable(q_funds_ov_portf_statem_reviewtbl()$out_portfolio_lvl,
                                                                   options = list(searching=F, paging=F, scrollX = T),
                                                                   rownames=F)
-# observe({
-#     tmp_df<-q_funds_ov_portf_statem_reviewtbl()$out_piechart_portf    
-# })
 
 lapply(isolate(unique(q_funds_ov_portf_statem_reviewtbl()$out_piechart_portf[,1])), function(i) {
     df <- isolate(q_funds_ov_portf_statem_reviewtbl()$out_piechart_portf)
@@ -317,8 +315,8 @@ output$funds_ov_portf_perf_ts_yield <- renderPlotly(plot_ly() %>%
                                                                )
                                                         )
 output$funds_ov_portf_perf_ts_yieldpct <- renderPlotly(plot_ly() %>% 
-                                                           add_trace(data=q_funds_ov_portf_statem_reviewtbl()$out_portf_perf_ts, x=~date, y=~ann_yield_pct, type='scatter', mode='lines', color=~portfolio, showlegend = FALSE) %>%
-                                                           layout(title = "Change of Annualized Yield (%)",
+                                                           add_trace(data=q_funds_ov_portf_statem_reviewtbl()$out_portf_perf_annreturn_ts, x=~date, y=~ann_yield_pct, type='scatter', mode='lines', color=~portfolio, showlegend = FALSE) %>%
+                                                           layout(title = "Change of Annualized Rate of Return (%)",
                                                                   xaxis = list(showgrid=F, title=""),
                                                                   yaxis = list(showgrid=F, title="%")
                                                            )
@@ -430,7 +428,7 @@ if(nrow(intrates_df)!=0){
     )
 }
 
-df_curr_yc <- psqlQuery("SELECT * FROM app.yield_curve_curr_vw ORDER BY tenor ASC")$result
+df_curr_yc <- psqlQuery("SELECT * FROM app.yield_curve_curr_mvw ORDER BY tenor ASC")$result
 if(nrow(df_curr_yc)!=0){
     df_curr_yc$type <- as.factor(df_curr_yc$type)
     df_curr_yc$value_date <- as.Date(df_curr_yc$value_date,"%Y-%m-%d")
