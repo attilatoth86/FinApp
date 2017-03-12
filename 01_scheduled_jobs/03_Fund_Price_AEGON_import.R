@@ -13,7 +13,8 @@ options(scipen = 999, digits = 4, encoding = "iso-8859-2")
 message("Creating import control table..")
 fp_import_ctrltbl <- psqlQuery("SELECT f.id fund_id, f.fund_name, f.source_id, COALESCE(fpv.value_date,f.inception_date-1)+1 import_date_from
                                FROM app.fund f
-                               LEFT OUTER JOIN app.fund_price_recent_vw fpv ON f.id=fpv.fund_id")$result
+                               LEFT OUTER JOIN app.fund_price_recent_vw fpv ON f.id=fpv.fund_id
+                               WHERE f.description like 'AEGON%'")$result
 
 message("Content of control table:")
 print(fp_import_ctrltbl)
