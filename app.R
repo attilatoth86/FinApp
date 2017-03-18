@@ -235,6 +235,7 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
                                                         AND pxa.portfolio_id=p.id
                                                         AND fit.fund_id=fp.fund_id
                                                         AND fit.value_date<=fp.value_date
+                                                        AND p.last_valuation_date>=fp.value_date
                                                     GROUP BY p.id, p.name, fp.value_date
                                                     ")$result
     
