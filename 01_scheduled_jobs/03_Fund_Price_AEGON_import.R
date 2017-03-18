@@ -67,6 +67,28 @@ finalInsertStatus <- psqlQuery("INSERT INTO app.fund_price (fund_id,value_date,p
 
 message(paste("Insert into app.fund_price..",finalInsertStatus$errorMsg))
 
+updPortfRefDate <- psqlQuery("
+                            UPDATE app.portfolio SET last_valuation_date=u.vd
+                            FROM (
+                                                         SELECT 
+                                                         pxa.portfolio_id, 
+                                                         MIN(fpr.value_date) vd
+                                                         FROM 
+                                                         app.portfolio_x_account_rltnp pxa,
+                                                         app.account a,
+                                                         app.fund_investment_transaction fit,
+                                                         app.fund_price_recent_vw fpr
+                                                         WHERE 
+                                                         pxa.account_id=a.id
+                                                         AND a.id=fit.account_id
+                                                         AND fit.fund_id=fpr.fund_id
+                                                         GROUP BY pxa.portfolio_id
+                            ) AS u
+                                                         WHERE app.portfolio.id = u.portfolio_id                             
+                             ")
+
+message(paste("Update app.portfolio with new portfolio valuation date..",updPortfRefDate$errorMsg))
+
 refreshMatVw <- psqlQuery("REFRESH MATERIALIZED VIEW app.portfolio_return_calc_mvw")
 
 message(paste("Refresh app.portfolio_return_calc_mvw materialized view..",refreshMatVw$errorMsg))
