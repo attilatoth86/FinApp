@@ -966,13 +966,16 @@ tabItem(tabName = "adm_acc",
                            tags$style(type='text/css', 
                                       "#adm_acc_add_btn {margin-top: 20px;}")
                      )
-                    ),
+                    )
+        ),
+        fluidRow(
+            column(width = 12,
                    shinyjs::hidden(
                        div(id="adm_acc_add_confirm",
                            class="alert alert-success",
                            role="alert",
                            tags$b(icon("check"), "Account has been added successfully."))
-                   ),
+                    ),
                    shinyjs::hidden(
                        div(id="adm_acc_add_error",
                            class="alert alert-danger",
@@ -980,6 +983,7 @@ tabItem(tabName = "adm_acc",
                            h4(icon("exclamation"), "Error"),
                            p(textOutput("adm_acc_add_error_txt"))
                        )
+                    )
                    )
         ),
         fluidRow(
