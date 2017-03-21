@@ -750,7 +750,7 @@ q_adm_invtr_reviewtbl <- reactive({
     input$adm_invtr_add_btn
     rbind(data.frame("TransactionID"=integer(),
                      "ValueDate"=character(),
-                     "ShareAmount"=integer(),
+                     "ShareAmount"=double(),
                      "AccountID"=integer(),
                      "FundID"=integer(),
                      "LastModification"=character(),
@@ -772,7 +772,7 @@ output$adm_invtr_reviewtbl <- DT::renderDataTable(q_adm_invtr_reviewtbl(),
 observeEvent(input$adm_invtr_add_btn,{
     adm_invtr_add_btn_queryOut <- psqlQuery(sprintf("INSERT INTO app.fund_investment_transaction 
                                                       (value_date,share_amount,account_id,fund_id)
-                                                      VALUES('%s', %i, %i, %i);"
+                                                      VALUES('%s', %f, %i, %i);"
                                                           ,input$adm_invtr_add_valdate
                                                           ,as.numeric(input$adm_invtr_add_noshares)
                                                           ,as.numeric(input$adm_invtr_add_targ_acc)
