@@ -637,7 +637,7 @@ q_adm_fundprices_reviewtbl <- reactive({
                             price \"FundPrice\",
                             to_char(last_modification,'YYYY-MM-DD HH24:MI:SS') \"LastModification\"
                      FROM app.fund_price
-                     ORDER BY value_date DESC, fund_id ASC")$result
+                     ORDER BY last_modification DESC, value_date DESC, fund_id ASC")$result
     )
 })
 output$adm_fundprices_reviewtbl <- DT::renderDataTable(q_adm_fundprices_reviewtbl(),
