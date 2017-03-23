@@ -74,51 +74,69 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
     input$adm_invtr_add_btn
     
     # performance details on every single investment transaction
-    df_fundportf_details <- rbind(
-        data.frame('Account'=character(),
-                   'Fund'=character(),
-                   'ValueDate'=character(),
-                   'PurchasedShares'=integer(),
-                   'InvestedAmount'=integer(),
-                   'MarketValue'=integer(),
-                   'Income/Loss'=integer(),
-                   'Yield%'=double(),
-                   'AnnualizedYield%'=double()),
-        psqlQuery("SELECT 
-                  fit.account_name \"Account\", 
-                  fit.fund_name \"Fund\", 
-                  fit.value_date \"ValueDate\", 
-                  fit.share_amount \"PurchasedShares\", 
-                  ROUND(fit.tr_value) \"InvestedAmount\",
-                  ROUND(fpr.price*fit.share_amount) \"MarketValue\", 
-                  ROUND(fpr.price*fit.share_amount)-ROUND(fit.tr_value) \"Income/Loss\",
-                  ROUND(CAST((fpr.price*fit.share_amount-fit.tr_value)/fit.tr_value*100 AS DECIMAL),2) \"Yield%\",
-                  ROUND(CAST(((ROUND(fpr.price*fit.share_amount)/ROUND(fit.tr_value))^(365.0/(app.get_last_fundprice_date()::date-fit.value_date+1)::float)-1)*100 AS DECIMAL),2) \"AnnualizedYield%\"
-                  FROM app.fund_investment_transaction_vw fit
-                  INNER JOIN app.fund_price_recent_vw fpr ON fit.fund_id=fpr.fund_id
-                  ORDER BY fit.value_date DESC, fit.account_id")$result
-    )
+    df_fundportf_details <-psqlQuery("SELECT 
+                                      fit.portfolio_name \"Portfolio\", 
+                                      fit.account_name \"Account\", 
+                                      fit.fund_name \"Fund\", 
+                                      fit.currency \"Currency\",
+                                      fit.value_date \"Value Date\", 
+                                      fit.share_amount \"Purchased Shares\", 
+                                      ROUND(fit.tr_value) \"Invested Amount\",
+                                      ROUND(fpr.price*fit.share_amount)-ROUND(fit.tr_value) \"Profit / Loss\",
+                                      ROUND(CAST((fpr.price*fit.share_amount-fit.tr_value)/fit.tr_value*100 AS DECIMAL),2) \"Yield%\",
+                                      CASE WHEN (fpr.value_date-fit.value_date+1)<365.0 THEN NULL
+                                        ELSE ROUND(CAST(((ROUND(fpr.price*fit.share_amount)/ROUND(fit.tr_value))^(365.0/(fpr.value_date-fit.value_date+1)::float)-1)*100 AS DECIMAL),2)
+                                      END \"Annualized Yield%\"
+                                      FROM app.fund_investment_transaction_vw fit
+                                      INNER JOIN app.fund_price_recent_vw fpr ON fit.fund_id=fpr.fund_id
+                                      ORDER BY fit.value_date DESC, fit.portfolio_id, fit.account_id")$result
 
     # performance details aggregated to account level
-    df_fundportf_acc_details <- rbind(
-        data.frame('Account'=character(),
-                   'InvestedAmount'=integer(),
-                   'MarketValue'=integer(),
-                   'Income/Loss'=integer(),
-                   'AverageBalance'=integer(),
-                   'AnnualizedYield%'=double()),
+    df_fundportf_acc_details <- psqlQuery("SELECT 
+                                          t1.portfolio_name \"Portfolio\",
+                                          t1.account_name \"Account\",
+                                          t1.currency \"Currency\",
+                                          t1.investedamount \"Invested Amount\",
+                                          t1.marketvalue \"Market Value\",
+                                          t1.incomeloss \"Profit / Loss\"
+                                          FROM
+                                          (
+                                          SELECT
+                                          fit.account_id,
+                                          fit.account_name,
+                                          fit.portfolio_id,
+                                          fit.portfolio_name,
+                                          fit.currency,
+                                          SUM(ROUND(fit.tr_value)) investedamount,
+                                          SUM(ROUND(fpr.price*fit.share_amount)) marketvalue,
+                                          SUM(ROUND(fpr.price*fit.share_amount)-ROUND(fit.tr_value)) incomeloss
+                                          FROM 
+                                          app.fund_investment_transaction_vw fit
+                                          ,app.fund_price_recent_vw fpr
+                                          WHERE fit.fund_id=fpr.fund_id
+                                          GROUP BY
+                                          fit.account_id,
+                                          fit.account_name,
+                                          fit.portfolio_id,
+                                          fit.portfolio_name,
+                                          fit.currency
+                                          ) t1
+                                          ORDER BY t1.portfolio_name, t1.account_name")$result
+
+    # performance details aggregated to portfolio level
+    df_fundportf_portfolio_lvl <- 
         psqlQuery("SELECT 
-          t1.account_name \"Account\",
-                  t1.investedamount \"InvestedAmount\",
-                  t1.marketvalue \"MarketValue\",
-                  t1.incomeloss \"Income/Loss\",
-                  ROUND(t2.avg_bal) \"AverageBalance\",
-                  ROUND(CAST((((t2.avg_bal+t1.incomeloss)/t2.avg_bal)^(365.0/t2.tot_period)-1)*100 AS DECIMAL),2) \"AnnualizedYield%\"
+                  t1.portfolio_name \"Portfolio\",
+                  t1.currency \"Currency\",
+                  t1.investedamount \"Invested Amount\",
+                  t1.marketvalue \"Market Value\",
+                  t1.incomeloss \"Profit / Loss\"
                   FROM
                   (
                   SELECT
-                  fit.account_id,
-                  fit.account_name,
+                  fit.portfolio_id,
+                  fit.portfolio_name,
+                  fit.currency,
                   SUM(ROUND(fit.tr_value)) investedamount,
                   SUM(ROUND(fpr.price*fit.share_amount)) marketvalue,
                   SUM(ROUND(fpr.price*fit.share_amount)-ROUND(fit.tr_value)) incomeloss
@@ -127,71 +145,14 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
                   ,app.fund_price_recent_vw fpr
                   WHERE fit.fund_id=fpr.fund_id
                   GROUP BY
-                  fit.account_id,
-                  fit.account_name
-                  ) t1,
-                  (
-                  SELECT 
-                  v.account_id,
-                  SUM(v.valid_to-v.valid_from+1) tot_period,
-                  SUM((v.valid_to-v.valid_from+1)*balance)/SUM(v.valid_to-v.valid_from+1) avg_bal
-                  FROM app.fund_inv_tr_acc_bal_vw v
-                  GROUP BY
-                  v.account_id
-                  ) t2
-                  WHERE t1.account_id=t2.account_id")$result
-        )
-
-    # performance details aggregated to portfolio level
-    df_fundportf_portfolio_lvl <- rbind(
-        data.frame('Portfolio'=character(),
-                   'InvestedAmount'=integer(),
-                   'MarketValue'=integer(),
-                   'Income/Loss'=integer(),
-                   'AverageBalance'=integer(),
-                   'AnnualizedYield%'=double()),
-        psqlQuery("SELECT 
-                  t2.portfolio_name \"Portfolio\",
-                  t1.investedamount \"InvestedAmount\",
-                  t1.marketvalue \"MarketValue\",
-                  t1.incomeloss \"Income/Loss\",
-                  ROUND(t2.avg_bal) \"AverageBalance\",
-                  ROUND(CAST((((t2.avg_bal+t1.incomeloss)/t2.avg_bal)^(365.0/t2.tot_period)-1)*100 AS DECIMAL),2) \"AnnualizedYield%\"
-                  FROM
-                  (
-                  SELECT
-                  pxa.portfolio_id,
-                  SUM(ROUND(fit.tr_value)) investedamount,
-                  SUM(ROUND(fpr.price*fit.share_amount)) marketvalue,
-                  SUM(ROUND(fpr.price*fit.share_amount)-ROUND(fit.tr_value)) incomeloss
-                  FROM 
-                  app.fund_investment_transaction_vw fit
-                  ,app.fund_price_recent_vw fpr
-                  ,app.portfolio_x_account_rltnp pxa
-                  WHERE fit.fund_id=fpr.fund_id AND fit.account_id=pxa.account_id
-                  GROUP BY
-                  pxa.portfolio_id
-                  ) t1,
-                  (
-                  SELECT 
-                  v.portfolio_id,
-                  v.portfolio_name,
-                  SUM(v.valid_to-v.valid_from+1) tot_period,
-                  SUM((v.valid_to-v.valid_from+1)*balance)/SUM(v.valid_to-v.valid_from+1) avg_bal
-                  FROM app.fund_inv_tr_portfolio_bal_vw v
-                  GROUP BY
-                  v.portfolio_id,
-                  v.portfolio_name
-                  ) t2
-                  WHERE t1.portfolio_id=t2.portfolio_id")$result
-    )
+                  fit.portfolio_id,
+                  fit.portfolio_name,
+                  fit.currency
+                  ) t1
+                  ORDER BY t1.portfolio_name")$result
     
     # Portfolio pie charts
-    df_piechart_portfolio <- rbind(
-        data.frame(portfolio_id=integer(),
-                   portfolio_name=character(),
-                   fund_name=character(),
-                   val=double()),
+    df_piechart_portfolio <- 
         psqlQuery("SELECT 
                     p.id portfolio_id,
                     p.name portfolio_name,
@@ -214,7 +175,6 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
                     p.id,
                     p.name,
                     fit.fund_name")$result
-    )
     
     val_total_fund_inv <- psqlQuery("SELECT SUM(ROUND(tr_value)) FROM app.fund_investment_transaction_vw")$result
     val_total_gross_yield <- psqlQuery("SELECT SUM(ROUND(fit.share_amount*fp.price)-ROUND(fit.tr_value)) FROM app.fund_investment_transaction_vw fit, app.fund_price_recent_vw fp WHERE fit.fund_id=fp.fund_id")$result
@@ -257,6 +217,14 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
         }
     }
     
+    df_portf_desc <- psqlQuery("SELECT 
+                               name \"Fund Portfolio\", 
+                               description \"Portfolio Description\", 
+                               last_valuation_date \"Valuation Date\" 
+                               FROM app.portfolio
+                               ORDER BY name")$result
+    df_portf_desc$`Valuation Date` <- format(df_portf_desc$`Valuation Date`,'%Y-%m-%d')
+    
     list(out_details=df_fundportf_details,
          out_acc_details=df_fundportf_acc_details,
          out_portfolio_lvl=df_fundportf_portfolio_lvl,
@@ -264,19 +232,20 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
          out_tot_fund_inv=val_total_fund_inv[1,1],
          out_tot_gross_yield=val_total_gross_yield[1,1],
          out_portf_perf_ts=df_portfolio_performance_timeseries,
-         out_portf_perf_annreturn_ts=pf_tmp_res)
+         out_portf_perf_annreturn_ts=pf_tmp_res,
+         out_portf_desc=df_portf_desc)
 })
 
 output$funds_ov_portf_statem_reviewtbl <- DT::renderDataTable(q_funds_ov_portf_statem_reviewtbl()$out_details,
-                                                              options = list(searching=F, paging=F, scrollX = T),
+                                                              options = list(searching=F, paging=F, scrollX = T, columnDefs = list(list(width = '50px', targets = 4))),
                                                               rownames=F)
 
 output$funds_ov_portf_statem_acc_reviewtbl <- DT::renderDataTable(q_funds_ov_portf_statem_reviewtbl()$out_acc_details,
-                                                                      options = list(searching=F, paging=F, scrollX = T),
+                                                                      options = list(dom = 't', ordering=F, searching=F, paging=F, scrollX = T),
                                                                       rownames=F)
 
 output$funds_ov_portf_statem_portf_lvl_reviewtbl <- DT::renderDataTable(q_funds_ov_portf_statem_reviewtbl()$out_portfolio_lvl,
-                                                                  options = list(searching=F, paging=F, scrollX = T),
+                                                                  options = list(dom = 't', ordering=F, searching=F, paging=F, scrollX = T),
                                                                   rownames=F)
 
 lapply(isolate(unique(q_funds_ov_portf_statem_reviewtbl()$out_piechart_portf[,1])), function(i) {
@@ -322,6 +291,10 @@ output$funds_ov_portf_perf_ts_yieldpct <- renderPlotly(plot_ly() %>%
                                                                   yaxis = list(showgrid=F, title="%")
                                                            )
                                                        )
+
+output$portf_desc <- DT::renderDataTable(q_funds_ov_portf_statem_reviewtbl()$out_portf_desc,
+                                         options = list(dom = 't', ordering=F, columnDefs = list(list(width = '95px', targets = 2))),
+                                         rownames=F)
 
 
 # SERV: Funds > Fund Prices -----------------------------------------------
@@ -867,6 +840,14 @@ tabItem(tabName = "funds_ov",
                 
             )
         ),
+        fluidRow(
+            column(width=12,
+                   box(width=NULL,
+                       status="primary",
+                       dataTableOutput("portf_desc")
+                       )
+                   )
+                 ),
         fluidRow(uiOutput("dyn_plot_ui_block_portfolio_piecharts")),
         fluidRow(
             box(title="Portfolio Performance",
