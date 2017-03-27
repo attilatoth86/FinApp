@@ -89,9 +89,11 @@ updPortfRefDate <- psqlQuery("
 
 message(paste("Update app.portfolio with new portfolio valuation date..",updPortfRefDate$errorMsg))
 
-refreshMatVw <- psqlQuery("REFRESH MATERIALIZED VIEW app.portfolio_return_calc_mvw")
+refreshMatVw1 <- psqlQuery("REFRESH MATERIALIZED VIEW app.portfolio_return_calc_mvw")
+refreshMatVw2 <- psqlQuery("REFRESH MATERIALIZED VIEW app.portf_acc_return_calc_mvw")
 
-message(paste("Refresh app.portfolio_return_calc_mvw materialized view..",refreshMatVw$errorMsg))
+message(paste("Refresh app.portfolio_return_calc_mvw materialized view..",refreshMatVw1$errorMsg))
+message(paste("Refresh app.portf_acc_return_calc_mvw materialized view..",refreshMatVw2$errorMsg))
 
 message(paste("Job ends:",Sys.time()))
 message("----------------------------------------")
