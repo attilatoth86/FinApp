@@ -204,6 +204,7 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
                                                         AND fit.value_date<=fp.value_date
                                                         AND p.last_valuation_date>=fp.value_date
                                                     GROUP BY p.id, p.name, fp.value_date, fit.currency
+                                                    ORDER BY fit.currency DESC, p.name, fp.value_date
                                                     ")$result
     
     df_tmp_portf_ann_return <- psqlQuery("SELECT portfolio, date, return FROM app.portfolio_return_calc_mvw WHERE return IS NOT NULL")$result
