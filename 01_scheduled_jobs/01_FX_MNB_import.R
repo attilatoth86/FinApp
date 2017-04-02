@@ -1,8 +1,6 @@
-# Init
 message("----------------------------------------")
-message(paste("Script starts: ",Sys.time()))
+message(paste("Job starts:",Sys.time()))
 
-# Preparation
 message("Importing necessary packages..")
 library(RCurl)
 library(XML)
@@ -10,40 +8,36 @@ library(XML)
 message("Importing functions..")
 source("/srv/shiny-server/finapp/f.R")
 
-# Import control
 message("Creating import control table..")
-import_fx_df <- psqlQuery("SELECT 
-                          MIN(a.date_open) date_open,
-                          c.iso_code
-                          FROM 
-                          app.account a, 
-                          app.currency c
-                          WHERE a.currency_id=c.id
+import_fx_df <- psqlQuery("SELECT c.iso_code, rfx.id,
+                            COALESCE(MAX(rv.value_date)+1, MIN(t.date_open)) import_date,
+                          MIN(t.date_open) date_open_min, MAX(rv.value_date) last_fx_rate_value
+                          FROM
+                          app.account t,
+                          app.currency c,
+                          app.rate_fx rfx,
+                          app.rate_value rv
+                          WHERE t.currency_id=c.id
                           AND c.iso_code!='HUF'
-                          GROUP BY c.iso_code")$result
+                          AND c.id=rfx.from_currency_id
+                          AND rfx.to_currency_id=(SELECT id FROM app.currency WHERE iso_code='HUF')
+                          AND rfx.id=rv.rate_id
+                          GROUP BY c.iso_code, rfx.id")$result
 
 message("Content of control table:")
 print(import_fx_df)
 
-# Truncate LD table
-clear_ld_tbl <- psqlQuery("TRUNCATE TABLE app.ld_rate_value")$errorMsg
-message("Truncate LD table..")
-message(clear_ld_tbl)
+clear_ld_tbl <- psqlQuery("TRUNCATE TABLE app.ld_rate_value")
+message(paste0(message("Truncate LD table.."),clear_ld_tbl$errorMsg))
 
 # Importing
 message("Importing..")
 if(length(import_fx_df$iso_code)!=0){
     for(i in 1:length(import_fx_df$iso_code)) {
-        iso_code <- import_fx_df$iso_code[i]
-        message(paste("Currency being processed: ",iso_code))
-        fx_firstDateToImport <- psqlQuery(sprintf("SELECT COALESCE(MAX(value_date)+1,'%s') value_date 
-                                                  FROM app.rate_value_fx_vw t WHERE t.rate_name='%s'",
-                                                  import_fx_df$date_open[i],
-                                                  paste0("HUF",iso_code)))$result[1,1]
-        
+        message(paste("Currency being processed: ",import_fx_df$iso_code[i]))
         retrieve_url <- sprintf("https://www.mnb.hu/en/arfolyam-tablazat?deviza=rbCurrencySelect&devizaSelected=%s&datefrom=%s&datetill=%s&order=1", 
-                                iso_code,
-                                fx_firstDateToImport,
+                                import_fx_df$iso_code[i],
+                                import_fx_df$import_date[i],
                                 Sys.Date())
         message(paste("Retrieving URL: ",retrieve_url))
         web_import <- getURL(retrieve_url)
@@ -51,7 +45,7 @@ if(length(import_fx_df$iso_code)!=0){
         if(is.null(df_import)==F){
             df_import[,1] <- as.Date(df_import[,1], format = "%d %B %Y")
             df_import[,2] <- as.numeric(df_import[,2])
-            df_import[,3] <- sprintf("HUF%s",import_fx_df$iso_code[i])
+            df_import[,3] <- import_fx_df$iso_code[i]
             colnames(df_import) <- c("value_date","value","rate_name")
             psqlInsert(df_import, "ld_rate_value")
         }
@@ -60,12 +54,14 @@ if(length(import_fx_df$iso_code)!=0){
     }
     final_import <- psqlQuery("INSERT INTO app.rate_value (rate_id,value_date,value)
                               SELECT
-                              r.id::int,
+                              rfx.id::int,
                               to_date(ldrv.value_date,'yyyy-mm-dd'),
                               ldrv.value::float
                               FROM
                               app.ld_rate_value ldrv
-                              LEFT OUTER JOIN app.rate r ON ldrv.rate_name=r.rate_name")
+                              INNER JOIN app.currency c ON ldrv.rate_name=c.iso_code
+                              INNER JOIN app.rate_fx rfx ON c.id=rfx.from_currency_id AND rfx.to_currency_id=(SELECT id FROM app.currency WHERE iso_code='HUF')
+                              ")
     message("Importing into app.rate_value table..")
     message(final_import$errorMsg)
 }
