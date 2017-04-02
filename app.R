@@ -180,8 +180,19 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
                                        WHERE cnt>1
                                        ORDER BY 1,2,3")$result
     
-    val_total_fund_inv <- psqlQuery("SELECT SUM(ROUND(tr_value)) FROM app.fund_investment_transaction_vw")$result
-    val_total_gross_yield <- psqlQuery("SELECT SUM(ROUND(fit.share_amount*fp.price)-ROUND(fit.tr_value)) FROM app.fund_investment_transaction_vw fit, app.fund_price_recent_vw fp WHERE fit.fund_id=fp.fund_id")$result
+    val_total_fund_inv <- psqlQuery("SELECT SUM(ROUND(CASE WHEN t1.currency='HUF' THEN ROUND(t1.tr_value) ELSE ROUND(t1.tr_value::NUMERIC,2) END*COALESCE(rv.value,1))) FROM
+                                        (SELECT fit.*, rfx.id fxrate_id FROM 
+                                            app.fund_investment_transaction_vw fit
+                                            LEFT OUTER JOIN app.rate_fx rfx ON fit.currency_id=rfx.from_currency_id AND rfx.to_currency_id = (SELECT id FROM app.currency WHERE iso_code='HUF')
+                                        ) t1 LEFT OUTER JOIN app.rate_value rv ON t1.fxrate_id=rv.rate_id AND t1.portfolio_valuation_date=rv.value_date")$result
+    val_total_gross_yield <- psqlQuery("SELECT SUM(ROUND(CASE WHEN t1.currency='HUF' THEN ROUND(t1.share_amount*fp.price) ELSE ROUND((t1.share_amount*fp.price)::NUMERIC,2) END*COALESCE(rv.value,1))-
+                                                    ROUND(CASE WHEN t1.currency='HUF' THEN ROUND(t1.tr_value) ELSE ROUND(t1.tr_value::NUMERIC,2) END*COALESCE(rv.value,1)))
+                                        FROM
+                                           (SELECT fit.*, rfx.id fxrate_id FROM 
+                                           app.fund_investment_transaction_vw fit
+                                           LEFT OUTER JOIN app.rate_fx rfx ON fit.currency_id=rfx.from_currency_id AND rfx.to_currency_id = (SELECT id FROM app.currency WHERE iso_code='HUF')
+                                           ) t1 LEFT OUTER JOIN app.rate_value rv ON t1.fxrate_id=rv.rate_id AND t1.portfolio_valuation_date=rv.value_date
+                                           INNER JOIN app.fund_price_recent_vw fp ON t1.fund_id=fp.fund_id")$result
     
     df_portfolio_performance_timeseries <-psqlQuery("SELECT 
                                                         p.id portfolio_id,
