@@ -16,6 +16,8 @@ message("downloading source file..")
 download.file(url=retrieve_url,destfile = "tmp.xlsx", method = "curl")
 
 df_import <- read.xlsx("tmp.xlsx", sheetIndex = 1)
+df_import <- df_import[(is.na(df_import[,1])|is.na(df_import[,2])|is.na(df_import[,3])|is.na(df_import[,4]))==F,]
+
 file.remove("tmp.xlsx")
 ld_tbl_dump <- cbind(
                     df_import[,-3],
