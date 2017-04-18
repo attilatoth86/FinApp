@@ -21,6 +21,7 @@ message("Importing..")
 price_tbl_pre <- data.frame(date=character(),fund_id=character(),fund_name=character(),price=character(),stringsAsFactors=F)
 for(i in 1:nrow(fp_import_ctrltbl)){
     message(paste("processing: ", fp_import_ctrltbl[i,2]))
+    message(paste("url: ",sprintf("https://amfunds.credit-suisse.com/ch/en/retail/fund/history/%s?currency=CHF",fp_import_ctrltbl[i,3])))
     download.file(url=sprintf("https://amfunds.credit-suisse.com/ch/en/retail/fund/history/%s?currency=CHF",fp_import_ctrltbl[i,3]),
                   destfile = "tmp.html",
                   method = "curl")
@@ -41,7 +42,7 @@ for(i in 1:nrow(fp_import_ctrltbl)){
 }
 
 message("Downloaded data to be imported:")
-print(price_tbl_pre)
+print(head(price_tbl_pre,10))
 
 truncateStatus <- psqlQuery("TRUNCATE TABLE app.ld_fund_price")
 message(paste("Truncate app.ld_fund_price..",truncateStatus$errorMsg))
