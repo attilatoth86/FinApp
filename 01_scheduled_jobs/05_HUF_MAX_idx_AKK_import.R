@@ -10,12 +10,16 @@ source("/srv/shiny-server/finapp/f.R")
 message("Other setups..")
 options(scipen = 999, digits = 4, encoding = "iso-8859-2")
 
+# http://akk.hu/hu/statisztika/hozamok-indexek-forgalmi-adatok/max-index?dateStart=1998-05-27&dateEnd=1999-05-26&download=1
+# orig: http://akk.hu/hu/statisztika/hozamok-indexek-forgalmi-adatok/max-index?download=1
 retrieve_url <- "http://akk.hu/hu/statisztika/hozamok-indexek-forgalmi-adatok/max-index?download=1"
 message(paste("Source URL:",retrieve_url))
 message("downloading source file..")
 download.file(url=retrieve_url,destfile = "tmp.xlsx", method = "curl")
 
 df_import <- read.xlsx("tmp.xlsx", sheetIndex = 1)
+df_import <- df_import[is.na(df_import[,6])==F,]
+
 file.remove("tmp.xlsx")
 ld_tbl_dump <- cbind(
     df_import[,c(2,6,3)]
