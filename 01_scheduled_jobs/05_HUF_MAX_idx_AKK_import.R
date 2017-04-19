@@ -54,6 +54,10 @@ finalInsertStatus <- psqlQuery("INSERT INTO app.rate_value (rate_id,value_date,v
 
 message(paste("Insert into app.rate_value..",finalInsertStatus$errorMsg))
 
+refreshMatVw <- psqlQuery("REFRESH MATERIALIZED VIEW app.rate_value_intrate_mvw")
+
+message(paste("Refresh app.rate_value_intrate_mvw materialized view..",refreshMatVw1$errorMsg))
+
 message(paste("Job ends:",Sys.time()))
 message("----------------------------------------")
 

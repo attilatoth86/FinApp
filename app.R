@@ -425,7 +425,7 @@ if(nrow(fxrates_df)!=0){
 
 # SERV: Macro factors > Interest Rates ------------------------------------
 
-intrates_df <- psqlQuery("SELECT * FROM app.rate_value_intrate_vw")$result
+intrates_df <- psqlQuery("SELECT * FROM app.rate_value_intrate_mvw")$result
 if(nrow(intrates_df)!=0){
     intrates_df$rate_name <- as.factor(intrates_df$rate_name)
     intrates_df$value_date <- as.Date(intrates_df$value_date,"%Y-%m-%d")

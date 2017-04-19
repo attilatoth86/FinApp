@@ -46,3 +46,5 @@ if(length(import_ir_df$id)!=0){
               app.ld_rate_value ldrv
               LEFT OUTER JOIN app.rate r ON ldrv.rate_name=r.rate_name")
 }
+
+psqlQuery("REFRESH MATERIALIZED VIEW app.rate_value_intrate_mvw")
