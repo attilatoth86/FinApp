@@ -425,38 +425,38 @@ if(nrow(fxrates_df)!=0){
 
 # SERV: Macro factors > Interest Rates ------------------------------------
 
-intrates_df <- psqlQuery("SELECT * FROM app.rate_value_intrate_mvw")$result
-if(nrow(intrates_df)!=0){
-    intrates_df$rate_name <- as.factor(intrates_df$rate_name)
-    intrates_df$value_date <- as.Date(intrates_df$value_date,"%Y-%m-%d")
-    
-    output$plot_intrates <- renderPlotly(
-        plot_ly(data=intrates_df, 
-                x=~value_date,
-                y=~value, 
-                color=~rate_name,
-                mode="lines") %>%
-            layout(xaxis=list(title=""), yaxis=list(title="Interest Rate (%)"))
-    )
-}
+# intrates_df <- psqlQuery("SELECT * FROM app.rate_value_intrate_mvw")$result
+# if(nrow(intrates_df)!=0){
+#     intrates_df$rate_name <- as.factor(intrates_df$rate_name)
+#     intrates_df$value_date <- as.Date(intrates_df$value_date,"%Y-%m-%d")
+#     
+#     output$plot_intrates <- renderPlotly(
+#         plot_ly(data=intrates_df, 
+#                 x=~value_date,
+#                 y=~value, 
+#                 color=~rate_name,
+#                 mode="lines") %>%
+#             layout(xaxis=list(title=""), yaxis=list(title="Interest Rate (%)"))
+#     )
+# }
 
-df_curr_yc <- psqlQuery("SELECT * FROM app.yield_curve_curr_mvw ORDER BY tenor ASC")$result
-if(nrow(df_curr_yc)!=0){
-    df_curr_yc$type <- as.factor(df_curr_yc$type)
-    df_curr_yc$value_date <- as.Date(df_curr_yc$value_date,"%Y-%m-%d")
-    
-    output$plot_yieldcurve <- renderPlotly(
-        plot_ly() %>% 
-            add_trace(data=df_curr_yc, 
-                      x=~tenor, 
-                      y=~yield, 
-                      color=~type, 
-                      mode="lines") %>% 
-            layout(xaxis=list(title="Maturity (days)"), 
-                   yaxis=list(title="Interest Rate (%)"),
-                   showlegend = T)
-    )
-}
+# df_curr_yc <- psqlQuery("SELECT * FROM app.yield_curve_curr_mvw ORDER BY tenor ASC")$result
+# if(nrow(df_curr_yc)!=0){
+#     df_curr_yc$type <- as.factor(df_curr_yc$type)
+#     df_curr_yc$value_date <- as.Date(df_curr_yc$value_date,"%Y-%m-%d")
+#     
+#     output$plot_yieldcurve <- renderPlotly(
+#         plot_ly() %>% 
+#             add_trace(data=df_curr_yc, 
+#                       x=~tenor, 
+#                       y=~yield, 
+#                       color=~type, 
+#                       mode="lines") %>% 
+#             layout(xaxis=list(title="Maturity (days)"), 
+#                    yaxis=list(title="Interest Rate (%)"),
+#                    showlegend = T)
+#     )
+# }
 
 
 # SERV: Admin > Manage accounts ----------------------------------
@@ -830,8 +830,8 @@ dashboardSidebar(width = "270px",
                      ),
                     menuItem("Accounts", tabName = "accounts", icon = icon("bank")),
                     menuItem("Macroeconomic Factors", tabName = NULL, icon = icon("globe"),
-                              menuSubItem("FX Rates", tabName = "macro_fx"),
-                              menuSubItem("Interest Rates", tabName = "macro_ir")
+                              menuSubItem("FX Rates", tabName = "macro_fx")
+                              # menuSubItem("Interest Rates", tabName = "macro_ir")
                      ),
                     menuItem("Administration", tabName = NULL, icon = icon("gear"),
                         menuSubItem("Manage accounts", tabName = "adm_acc"),
@@ -940,25 +940,25 @@ tabItem(tabName = "macro_fx",
 
 # UI: Macro > Interest rates ----------------------------------------------
 
-tabItem(tabName = "macro_ir",
-        h2("Macroeconomic Factors", tags$small("Interest Rates")),
-        fluidRow(
-            box(title = "Recent Yield Curves",
-                solidHeader = T,
-                plotlyOutput("plot_yieldcurve"),
-                width = 12,
-                status = "primary"
-            )
-        ),
-        fluidRow(
-            box(title = "Market Interest Rates",
-                solidHeader = T,
-                plotlyOutput("plot_intrates"),
-                width = 12,
-                status = "primary"
-            )
-        )
-),
+# tabItem(tabName = "macro_ir",
+#         h2("Macroeconomic Factors", tags$small("Interest Rates")),
+#         fluidRow(
+#             box(title = "Recent Yield Curves",
+#                 solidHeader = T,
+#                 plotlyOutput("plot_yieldcurve"),
+#                 width = 12,
+#                 status = "primary"
+#             )
+#         ),
+#         fluidRow(
+#             box(title = "Market Interest Rates",
+#                 solidHeader = T,
+#                 plotlyOutput("plot_intrates"),
+#                 width = 12,
+#                 status = "primary"
+#             )
+#         )
+# ),
 
 # UI: Admin > Manage accounts ---------------------------------------------------
 
