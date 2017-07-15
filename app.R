@@ -10,6 +10,10 @@ library(shinyjs)
 library(DT)
 
 library(PerformanceAnalytics)
+
+library(plyr)
+library(dplyr)
+
 # init source() -----------------------------------------------------------
 
 source("f.R")
@@ -73,127 +77,7 @@ output$adm_invtr_add_fund_selector <- shiny::renderUI(selectInput("adm_invtr_add
 q_funds_ov_portf_statem_reviewtbl <- reactive({
     input$adm_invtr_add_btn
     
-    # performance details on every single investment transaction
-    df_fundportf_details <-psqlQuery("SELECT 
-                                      fit.portfolio_name \"Portfolio\", 
-                                      fit.account_name \"Account\", 
-                                      fit.fund_name \"Fund\", 
-                                      fit.currency \"Currency\",
-                                      fit.value_date \"Value Date\", 
-                                      fit.share_amount \"Purchased Shares\", 
-                                      CASE WHEN fit.currency='HUF' THEN ROUND(fit.tr_value) 
-                                        ELSE ROUND(CAST(fit.tr_value AS DECIMAL),2) END \"Invested Amount\",
-                                      CASE WHEN fit.currency='HUF' THEN ROUND(fpr.price*fit.share_amount)-ROUND(fit.tr_value) 
-                                        ELSE ROUND(CAST(fpr.price*fit.share_amount AS DECIMAL),2)-ROUND(CAST(fit.tr_value AS DECIMAL),2) END \"Profit / Loss\",
-                                      ROUND(CAST((fpr.price*fit.share_amount-fit.tr_value)/fit.tr_value*100 AS DECIMAL),2) \"Yield%\",
-                                      CASE WHEN (fpr.value_date-fit.value_date+1)<365.0 THEN NULL
-                                        ELSE ROUND(CAST(((ROUND(fpr.price*fit.share_amount)/ROUND(fit.tr_value))^(365.0/(fpr.value_date-fit.value_date+1)::float)-1)*100 AS DECIMAL),2)
-                                      END \"Annualized Yield%\"
-                                      FROM app.fund_investment_transaction_vw fit
-                                      INNER JOIN app.fund_price_recent_vw fpr ON fit.fund_id=fpr.fund_id
-                                      ORDER BY fit.value_date DESC, fit.portfolio_id, fit.account_id")$result
-
-    # performance details aggregated to account level
-    df_fundportf_acc_details <- psqlQuery("SELECT 
-                                          t1.portfolio_name \"Portfolio\",
-                                          t1.account_name \"Account\",
-                                          t1.currency \"Currency\",
-                                          t1.investedamount \"Invested Amount\",
-                                          t1.marketvalue \"Market Value\",
-                                          t1.incomeloss \"Profit / Loss\"
-                                          FROM
-                                          (
-                                          SELECT
-                                          fit.account_id,
-                                          fit.account_name,
-                                          fit.portfolio_id,
-                                          fit.portfolio_name,
-                                          fit.currency,
-                                          SUM(CASE WHEN fit.currency='HUF' THEN ROUND(fit.tr_value) 
-                                        ELSE ROUND(CAST(fit.tr_value AS DECIMAL),2) END) investedamount,
-                                          SUM(CASE WHEN fit.currency='HUF' THEN ROUND(fpr.price*fit.share_amount)
-                                        ELSE ROUND(CAST(fpr.price*fit.share_amount AS DECIMAL),2) END) marketvalue,
-                                          SUM(CASE WHEN fit.currency='HUF' THEN ROUND(fpr.price*fit.share_amount)-ROUND(fit.tr_value) 
-                                        ELSE ROUND(CAST(fpr.price*fit.share_amount AS DECIMAL),2)-ROUND(CAST(fit.tr_value AS DECIMAL),2) END) incomeloss
-                                          FROM 
-                                          app.fund_investment_transaction_vw fit
-                                          ,app.fund_price_recent_vw fpr
-                                          WHERE fit.fund_id=fpr.fund_id
-                                          GROUP BY
-                                          fit.account_id,
-                                          fit.account_name,
-                                          fit.portfolio_id,
-                                          fit.portfolio_name,
-                                          fit.currency
-                                          ) t1
-                                          ORDER BY t1.portfolio_name, t1.account_name")$result
-
-    # performance details aggregated to portfolio level
-    df_fundportf_portfolio_lvl <- 
-        psqlQuery("SELECT 
-                  t1.portfolio_name \"Portfolio\",
-                  t1.currency \"Currency\",
-                  t1.investedamount \"Invested Amount\",
-                  t1.marketvalue \"Market Value\",
-                  t1.incomeloss \"Profit / Loss\"
-                  FROM
-                  (
-                  SELECT
-                  fit.portfolio_id,
-                  fit.portfolio_name,
-                  fit.currency,
-                  SUM(CASE WHEN fit.currency='HUF' THEN ROUND(fit.tr_value) 
-                    ELSE ROUND(CAST(fit.tr_value AS DECIMAL),2) END) investedamount,
-                  SUM(CASE WHEN fit.currency='HUF' THEN ROUND(fpr.price*fit.share_amount)
-                    ELSE ROUND(CAST(fpr.price*fit.share_amount AS DECIMAL),2) END) marketvalue,
-                  SUM(CASE WHEN fit.currency='HUF' THEN ROUND(fpr.price*fit.share_amount)-ROUND(fit.tr_value) 
-                    ELSE ROUND(CAST(fpr.price*fit.share_amount AS DECIMAL),2)-ROUND(CAST(fit.tr_value AS DECIMAL),2) END) incomeloss
-                  FROM 
-                  app.fund_investment_transaction_vw fit
-                  ,app.fund_price_recent_vw fpr
-                  WHERE fit.fund_id=fpr.fund_id
-                  GROUP BY
-                  fit.portfolio_id,
-                  fit.portfolio_name,
-                  fit.currency
-                  ) t1
-                  ORDER BY t1.portfolio_name")$result
-    
-    # Portfolio pie charts
-    df_piechart_portfolio <- psqlQuery("SELECT id AS portfolio_id, name AS portfolio_name, fund_name, val
-                                        FROM
-                                        (
-                                        SELECT p.id, p.name, fit.fund_name,
-                                            COUNT(p.id) OVER (PARTITION BY p.id) cnt,
-                                            SUM(fit.share_amount*fp.price) val
-                                        FROM 
-                                           app.fund_investment_transaction_vw fit,
-                                           app.fund_price_recent_vw fp,
-                                           app.portfolio_x_account_rltnp pxa,
-                                           app.portfolio p
-                                        WHERE 1=1
-                                           AND fit.fund_id=fp.fund_id
-                                           AND fit.account_id=pxa.account_id
-                                           AND pxa.portfolio_id=p.id
-                                        GROUP BY p.id, p.name, fit.fund_name
-                                        ) t
-                                       WHERE cnt>1
-                                       ORDER BY 1,2,3")$result
-    
-    val_total_fund_inv <- psqlQuery("SELECT SUM(ROUND(CASE WHEN t1.currency='HUF' THEN ROUND(t1.tr_value) ELSE ROUND(t1.tr_value::NUMERIC,2) END*COALESCE(rv.value,1))) FROM
-                                        (SELECT fit.*, rfx.id fxrate_id FROM 
-                                            app.fund_investment_transaction_vw fit
-                                            LEFT OUTER JOIN app.rate_fx rfx ON fit.currency_id=rfx.from_currency_id AND rfx.to_currency_id = (SELECT id FROM app.currency WHERE iso_code='HUF')
-                                        ) t1 LEFT OUTER JOIN app.rate_value rv ON t1.fxrate_id=rv.rate_id AND t1.portfolio_valuation_date=rv.value_date")$result
-    val_total_gross_yield <- psqlQuery("SELECT SUM(ROUND(CASE WHEN t1.currency='HUF' THEN ROUND(t1.share_amount*fp.price) ELSE ROUND((t1.share_amount*fp.price)::NUMERIC,2) END*COALESCE(rv.value,1))-
-                                                    ROUND(CASE WHEN t1.currency='HUF' THEN ROUND(t1.tr_value) ELSE ROUND(t1.tr_value::NUMERIC,2) END*COALESCE(rv.value,1)))
-                                        FROM
-                                           (SELECT fit.*, rfx.id fxrate_id FROM 
-                                           app.fund_investment_transaction_vw fit
-                                           LEFT OUTER JOIN app.rate_fx rfx ON fit.currency_id=rfx.from_currency_id AND rfx.to_currency_id = (SELECT id FROM app.currency WHERE iso_code='HUF')
-                                           ) t1 LEFT OUTER JOIN app.rate_value rv ON t1.fxrate_id=rv.rate_id AND t1.portfolio_valuation_date=rv.value_date
-                                           INNER JOIN app.fund_price_recent_vw fp ON t1.fund_id=fp.fund_id")$result
-    
+    # Retrieve data for Cummulative Yield time series
     df_portfolio_performance_timeseries <-psqlQuery("SELECT 
                                                         p.id portfolio_id,
                                                         p.name portfolio,
@@ -217,16 +101,17 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
                                                     GROUP BY p.id, p.name, fp.value_date, fit.currency
                                                     ORDER BY fit.currency DESC, p.name, fp.value_date
                                                     ")$result
-    
-    df_tmp_portf_ann_return <- psqlQuery("SELECT portfolio, date, return FROM app.portfolio_return_calc_mvw WHERE return IS NOT NULL")$result
+
+    # Creating Annualized Portfolio Returns
+    df_tmp_portf_ann_return <- psqlQuery("SELECT portfolio, date, return FROM app.portfolio_return_calc_mvw WHERE return IS NOT NULL ORDER BY portfolio, date")$result
     df_tmp_portf_ann_return$portfolio <- as.factor(df_tmp_portf_ann_return$portfolio)
-    
     pf_idx <- unique(df_tmp_portf_ann_return$portfolio)
+    
     pf_tmp_res <- data.frame(portfolio=character(),date=as.Date(character()),ann_yield_pct=numeric())
     for(i in 1:length(pf_idx)){
         idx_inner <- unique(df_tmp_portf_ann_return[df_tmp_portf_ann_return$portfolio==pf_idx[i],"date"])
-        if(length(idx_inner)>=180){
-            for(j in 180:length(idx_inner)){
+        if(length(idx_inner)>=252){
+            for(j in 252:length(idx_inner)){
                 pf_tmp_res <- rbind(pf_tmp_res,
                                     data.frame(
                                         portfolio=pf_idx[i],
@@ -234,9 +119,126 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
                                         ann_yield_pct=Return.annualized(df_tmp_portf_ann_return[df_tmp_portf_ann_return$portfolio==pf_idx[i],][1:j,"return"],
                                                                         scale = 252, geometric = T)*100
                                     ),stringsAsFactors = F)
-            }   
+            }
         }
     }
+    dt_recent_pf_performance <- pf_tmp_res %>% inner_join(group_by(pf_tmp_res, portfolio) %>% 
+                                                           summarise(recent_dt=max(date)),
+                                                                by = c("portfolio" = "portfolio", "date" = "recent_dt"))
+    
+
+    # Retrieve performance details on every single investment transaction
+    df_fundportf_details <-psqlQuery("SELECT 
+                                      fit.account_name \"Account\", 
+                                      fit.fund_name \"Fund\", 
+                                      fit.currency \"Currency\",
+                                      fit.value_date \"Value Date\", 
+                                      fit.share_amount || ' pc' \"Purchased Shares\", 
+                                      CASE WHEN fit.currency='HUF' THEN ROUND(fit.tr_value) 
+                                        ELSE ROUND(CAST(fit.tr_value AS DECIMAL),2) END ||' '|| fit.currency  \"Invested Amount\",
+                                      CASE WHEN fit.currency='HUF' THEN ROUND(fpr.price*fit.share_amount)-ROUND(fit.tr_value) 
+                                        ELSE ROUND(CAST(fpr.price*fit.share_amount AS DECIMAL),2)-ROUND(CAST(fit.tr_value AS DECIMAL),2) END ||' '|| fit.currency \"Profit / Loss\",
+                                      (fpr.price*fit.share_amount-fit.tr_value)/fit.tr_value \"Yield\",
+                                      CASE WHEN (fpr.value_date-fit.value_date+1)<365.0 THEN NULL
+                                        ELSE ((ROUND(fpr.price*fit.share_amount)/ROUND(fit.tr_value))^(365.0/(fpr.value_date-fit.value_date+1)::float)-1)
+                                      END \"Annualized Yield\"
+                                      FROM app.fund_investment_transaction_vw fit
+                                      LEFT OUTER JOIN app.fund_price_recent_vw fpr ON fit.fund_id=fpr.fund_id
+                                      ORDER BY fit.value_date DESC, fit.portfolio_id, fit.account_id")$result
+
+    # Retrieve performance details aggregated to account level
+    df_fundportf_acc_details <- psqlQuery("
+                                          SELECT
+                                              fit.account_name \"Account\",
+                                              fit.currency \"Currency\",
+                                              SUM(CASE WHEN fit.currency='HUF' THEN ROUND(fit.tr_value) 
+                                                    ELSE ROUND(CAST(fit.tr_value AS DECIMAL),2) END) ||' '|| fit.currency  \"Invested Amount\",
+                                              SUM(CASE WHEN fit.currency='HUF' THEN ROUND(fpr.price*fit.share_amount)
+                                                    ELSE ROUND(CAST(fpr.price*fit.share_amount AS DECIMAL),2) END) ||' '|| fit.currency \"Market Value\",
+                                              SUM(CASE WHEN fit.currency='HUF' THEN ROUND(fpr.price*fit.share_amount)-ROUND(fit.tr_value) 
+                                                    ELSE ROUND(CAST(fpr.price*fit.share_amount AS DECIMAL),2)-ROUND(CAST(fit.tr_value AS DECIMAL),2) END) ||' '|| fit.currency \"Profit / Loss\"
+                                          FROM 
+                                            app.fund_investment_transaction_vw fit
+                                            LEFT OUTER JOIN app.fund_price_recent_vw fpr ON fit.fund_id=fpr.fund_id
+                                          GROUP BY
+                                              fit.account_id,
+                                              fit.account_name,
+                                              fit.currency
+                                          ORDER BY
+                                              fit.account_name
+                                         ")$result
+
+    # Retrieve performance details aggregated to portfolio level
+    df_fundportf_pf_details <- psqlQuery("
+                                        SELECT
+                                        	p.name \"Portfolio Name\",
+                                        	fit.currency \"Currency\",
+                                        	SUM(CASE WHEN fit.currency='HUF' THEN ROUND(fit.tr_value) 
+                                        		ELSE ROUND(CAST(fit.tr_value AS DECIMAL),2) END) ||' '|| fit.currency \"Invested Amount\",
+                                        	SUM(CASE WHEN fit.currency='HUF' THEN ROUND(fpr.price*fit.share_amount)
+                                        		ELSE ROUND(CAST(fpr.price*fit.share_amount AS DECIMAL),2) END) ||' '|| fit.currency \"Market Value\",
+                                        	SUM(CASE WHEN fit.currency='HUF' THEN ROUND(fpr.price*fit.share_amount)-ROUND(fit.tr_value) 
+                                        		ELSE ROUND(CAST(fpr.price*fit.share_amount AS DECIMAL),2)-ROUND(CAST(fit.tr_value AS DECIMAL),2) END) ||' '|| fit.currency \"Profit / Loss\"
+                                        FROM 
+                                        	app.fund_investment_transaction_vw fit
+                                        	INNER JOIN app.portfolio_x_account_rltnp pxa ON fit.account_id=pxa.account_id
+                                        	INNER JOIN app.portfolio p ON pxa.portfolio_id=p.id
+                                        	LEFT OUTER JOIN app.fund_price_recent_vw fpr ON fit.fund_id=fpr.fund_id
+                                        GROUP BY
+                                        	p.id,
+                                        	p.name,
+                                        	fit.currency
+                                        ORDER BY p.id;
+                                         ")$result
+    df_fundportf_pf_details <- df_fundportf_pf_details %>% 
+                                left_join(dt_recent_pf_performance, by=c("Portfolio Name"="portfolio")) %>%
+                                mutate("Annualized Yield"=ann_yield_pct/100) %>%
+                                select(-c(date,ann_yield_pct))
+
+    # Retrieve data for portfolio pie charts
+    df_piechart_portfolio <- psqlQuery("SELECT id AS portfolio_id, name AS portfolio_name, fund_name, val
+                                        FROM
+                                        (
+                                        SELECT p.id, p.name, fit.fund_name,
+                                            COUNT(p.id) OVER (PARTITION BY p.id) cnt,
+                                            SUM(fit.share_amount*fp.price) val
+                                        FROM 
+                                           app.fund_investment_transaction_vw fit,
+                                           app.fund_price_recent_vw fp,
+                                           app.portfolio_x_account_rltnp pxa,
+                                           app.portfolio p
+                                        WHERE 1=1
+                                           AND fit.fund_id=fp.fund_id
+                                           AND fit.account_id=pxa.account_id
+                                           AND pxa.portfolio_id=p.id
+                                        GROUP BY p.id, p.name, fit.fund_name
+                                        ) t
+                                       WHERE cnt>1
+                                       ORDER BY t.id")$result
+
+    # Retrieve key performance figures
+    val_key_figures <- psqlQuery("
+                                SELECT
+									SUM(ROUND(CASE WHEN t1.currency='HUF' THEN ROUND(t1.tr_value) ELSE ROUND((t1.tr_value)::NUMERIC,2) END*COALESCE(rv.value,1))) total_init_investment,
+                                	SUM(ROUND(CASE WHEN t1.currency='HUF' THEN ROUND(t1.share_amount*t1.price) ELSE ROUND((t1.share_amount*t1.price)::NUMERIC,2) END*COALESCE(rv.value,1))) total_market_value,
+                                	SUM(ROUND(CASE WHEN t1.currency='HUF' THEN ROUND(t1.share_amount*t1.price) ELSE ROUND((t1.share_amount*t1.price)::NUMERIC,2) END*COALESCE(rv.value,1))-
+									ROUND(CASE WHEN t1.currency='HUF' THEN ROUND(t1.tr_value) ELSE ROUND((t1.tr_value)::NUMERIC,2) END*COALESCE(rv.value,1))) total_yield
+                                FROM
+                                	(
+                                	SELECT 
+                                		fit.currency, fit.tr_value, fit.share_amount, fp.price, fp.value_date last_fund_price_date, rfx.id fxrate_id
+                                	FROM 
+                                		app.fund_investment_transaction_vw fit
+                                		LEFT OUTER JOIN app.fund_price_recent_vw fp ON fit.fund_id=fp.fund_id
+                                		LEFT OUTER JOIN app.rate_fx rfx ON fit.currency_id=rfx.from_currency_id AND rfx.to_currency_id = (SELECT id FROM app.currency WHERE iso_code='HUF')
+                                	) t1 LEFT OUTER JOIN app.rate_value rv ON t1.fxrate_id=rv.rate_id AND t1.last_fund_price_date=rv.value_date;
+                                 ")$result
+
+    val_total_fund_inv <- val_key_figures[1,"total_init_investment"]
+    val_total_mark_val <- val_key_figures[1,"total_market_value"]
+    val_total_gross_yield <- val_key_figures[1,"total_yield"]
+
+
     
     df_portf_desc <- psqlQuery("SELECT 
                                name \"Fund Portfolio\", 
@@ -248,39 +250,42 @@ q_funds_ov_portf_statem_reviewtbl <- reactive({
     
     list(out_details=df_fundportf_details,
          out_acc_details=df_fundportf_acc_details,
-         out_portfolio_lvl=df_fundportf_portfolio_lvl,
+         out_pf_details=df_fundportf_pf_details,
+         
          out_piechart_portf=df_piechart_portfolio,
-         out_tot_fund_inv=val_total_fund_inv[1,1],
-         out_tot_gross_yield=val_total_gross_yield[1,1],
+         
+         out_tot_fund_inv=val_total_fund_inv,
+         out_tot_mark_val=val_total_mark_val,
+         out_tot_gross_yield=val_total_gross_yield,
+         
          out_portf_perf_ts=df_portfolio_performance_timeseries,
          out_portf_perf_annreturn_ts=pf_tmp_res,
          out_portf_desc=df_portf_desc)
 })
 
-output$funds_ov_portf_statem_reviewtbl <- DT::renderDataTable(q_funds_ov_portf_statem_reviewtbl()$out_details,
-                                                              options = list(searching=F, paging=F, scrollX = T, columnDefs = list(list(width = '50px', targets = 4))),
-                                                              rownames=F)
+### Infoboxes
+output$funds_ov_tot_fund_inv <- renderText(format(q_funds_ov_portf_statem_reviewtbl()$out_tot_fund_inv, big.mark=" "))
+output$funds_ov_tot_gross_yield <- renderText(format(q_funds_ov_portf_statem_reviewtbl()$out_tot_gross_yield, big.mark=" "))
 
-output$funds_ov_portf_statem_acc_reviewtbl <- DT::renderDataTable(q_funds_ov_portf_statem_reviewtbl()$out_acc_details,
-                                                                      options = list(dom = 't', ordering=F, searching=F, paging=F, scrollX = T),
-                                                                      rownames=F)
-
-output$funds_ov_portf_statem_portf_lvl_reviewtbl <- DT::renderDataTable(q_funds_ov_portf_statem_reviewtbl()$out_portfolio_lvl,
-                                                                  options = list(dom = 't', ordering=F, searching=F, paging=F, scrollX = T),
-                                                                  rownames=F)
-
+### Piecharts
 lapply(isolate(unique(q_funds_ov_portf_statem_reviewtbl()$out_piechart_portf[,1])), function(i) {
     df <- isolate(q_funds_ov_portf_statem_reviewtbl()$out_piechart_portf)
     data <- df[df$portfolio_id==i,]
     output[[paste0("dyn_plot_portfolio_piechart_",i)]] <- renderPlotly(
         plot_ly() %>% 
-            add_pie(data=data, labels = ~fund_name, values = ~val, showlegend = FALSE) %>% 
+            add_pie(data=data, labels = ~fund_name, values = ~val, showlegend = F,
+                    textposition = 'inside',
+                    textinfo = 'percent',
+                    insidetextfont = list(color = '#FFFFFF'),
+                    marker = list(line = list(color = '#FFFFFF', width = 1))
+                    ) %>% 
+            layout(xaxis = list(showgrid = F, zeroline = F, showticklabels = F),
+                   yaxis = list(showgrid = F, zeroline = F, showticklabels = F)) %>%
             layout(title = unique(data$portfolio_name),
-                   xaxis = list(showgrid = F, zeroline = F, showticklabels = F),
-                   yaxis = list(showgrid = F, zeroline = F, showticklabels = F))
+                   font=list(size = 9))
     )
     output[[paste0("dyn_ui_plot_portfolio_piechart_",i)]] <- renderUI({
-        column(6,
+        column(3,
                plotlyOutput(paste0("dyn_plot_portfolio_piechart_",i)))
     })
 })
@@ -295,15 +300,25 @@ output$dyn_plot_ui_block_portfolio_piecharts <- renderUI({
     )
 })
 
-output$funds_ov_tot_fund_inv <- renderText(format(q_funds_ov_portf_statem_reviewtbl()$out_tot_fund_inv, big.mark=" "))
-output$funds_ov_tot_gross_yield <- renderText(format(q_funds_ov_portf_statem_reviewtbl()$out_tot_gross_yield, big.mark=" "))
+### Tables
+output$funds_ov_portf_statem_pf_reviewtbl <- DT::renderDataTable(DT::datatable(q_funds_ov_portf_statem_reviewtbl()$out_pf_details, 
+                                                                                options = list(searching=F, paging=F, scrollX = T),
+                                                                                rownames=F) %>% formatPercentage(c("Annualized Yield"),2)
+                                                                 )
+output$funds_ov_portf_statem_acc_reviewtbl <- DT::renderDataTable(q_funds_ov_portf_statem_reviewtbl()$out_acc_details,
+                                                                  options = list(dom = 't', ordering=F, searching=F, paging=F, scrollX = T),
+                                                                  rownames=F)
+output$funds_ov_portf_statem_reviewtbl <- DT::renderDataTable(DT::datatable(q_funds_ov_portf_statem_reviewtbl()$out_details, 
+                                                                            options = list(searching=F, paging=T, scrollX = T, columnDefs = list(list(width = '50px', targets = c(3,6)))),
+                                                                            rownames=F) %>% formatPercentage(c("Yield","Annualized Yield"),2)
+                                                              )
 
 lapply(isolate(unique(q_funds_ov_portf_statem_reviewtbl()$out_portf_perf_ts[,4])), function(i) {
     df <- isolate(q_funds_ov_portf_statem_reviewtbl()$out_portf_perf_ts)
     data <- df[df$currency==i,]
     output[[paste0("dyn_plot_portfolio_cumyield_ts_",i)]] <- renderPlotly(
         plot_ly() %>% 
-            add_trace(data=data, x=~date, y=~accumulated_yield, type='scatter', mode='lines', fill='tozeroy', color=~portfolio, showlegend=F) %>%
+            add_trace(data=data, x=~date, y=~accumulated_yield, type='scatter', mode='lines', color=~portfolio, showlegend=F) %>%
             layout(title = paste0("Cumulative Yield on ",unique(data$currency)," denominated portfolios"),
                    xaxis = list(showgrid=F, title=""),
                    yaxis = list(showgrid=F, title=unique(data$currency))
@@ -902,7 +917,7 @@ tabItem(tabName = "funds_ov",
         fluidRow(
             box(title="Detailed Portfolio Statements",
                 solidHeader = T,
-                DT::dataTableOutput("funds_ov_portf_statem_portf_lvl_reviewtbl"),
+                DT::dataTableOutput("funds_ov_portf_statem_pf_reviewtbl"),
                 br(),br(),
                 DT::dataTableOutput("funds_ov_portf_statem_acc_reviewtbl"),
                 br(),br(),
