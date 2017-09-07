@@ -964,6 +964,17 @@ tabItem(tabName = "fundprices",
         fluidRow(uiOutput("dyn_plot_block"))
 ),
 
+# UI: Accounts > Analytics ------------------------------------------------
+
+tabItem(tabName = "account_analytics",
+        h2("Accounts", tags$small("Analytics")),
+        fluidRow(
+            box(plotlyOutput("plot_brchrt_bal_development"),
+                width = 12,
+                status = "primary")
+        )
+),
+
 # UI: Macro > FX rates ----------------------------------------------------
 
 tabItem(tabName = "macro_fx",
