@@ -309,7 +309,7 @@ output$funds_ov_portf_statem_acc_reviewtbl <- DT::renderDataTable(q_funds_ov_por
                                                                   options = list(dom = 't', ordering=F, searching=F, paging=F, scrollX = T),
                                                                   rownames=F)
 output$funds_ov_portf_statem_reviewtbl <- DT::renderDataTable(DT::datatable(q_funds_ov_portf_statem_reviewtbl()$out_details, 
-                                                                            options = list(searching=F, paging=T, scrollX = T, columnDefs = list(list(width = '50px', targets = c(3,6)))),
+                                                                            options = list(searching=T, paging=T, scrollX = T, columnDefs = list(list(width = '50px', targets = c(3,6)))),
                                                                             rownames=F) %>% formatPercentage(c("Yield","Annualized Yield"),2)
                                                               )
 
@@ -429,50 +429,72 @@ if(nrow(fxrates_df)!=0){
     fxrates_df$value_date <- as.Date(fxrates_df$value_date,"%Y-%m-%d")
     
     output$plot_fxrates <- renderPlotly(
-        plot_ly(data=fxrates_df, 
-                x=~value_date,
-                y=~value, 
-                color=~rate_name,
-                mode="lines") %>%
-            layout(xaxis=list(title=""), yaxis=list(title="Value"))
+        plot_ly() %>%
+            add_trace(data=fxrates_df, 
+                      x=~value_date,
+                      y=~value, 
+                      color=~rate_name,
+                      mode="lines",
+                      name="CHF/HUF") %>%
+            layout(title = "Historical Exchange Rates For CHF to HUF", xaxis=list(title=""), yaxis=list(title="HUF"))
     )
 }
 
-# SERV: Macro factors > Interest Rates ------------------------------------
+# SERV: Accounts ----------------------------------
 
-# intrates_df <- psqlQuery("SELECT * FROM app.rate_value_intrate_mvw")$result
-# if(nrow(intrates_df)!=0){
-#     intrates_df$rate_name <- as.factor(intrates_df$rate_name)
-#     intrates_df$value_date <- as.Date(intrates_df$value_date,"%Y-%m-%d")
-#     
-#     output$plot_intrates <- renderPlotly(
-#         plot_ly(data=intrates_df, 
-#                 x=~value_date,
-#                 y=~value, 
-#                 color=~rate_name,
-#                 mode="lines") %>%
-#             layout(xaxis=list(title=""), yaxis=list(title="Interest Rate (%)"))
-#     )
-# }
+q_acc_bal_dev <-    psqlQuery("
+                            SELECT
+                            	rep.reporting_period,
+                            	t.account_id,
+                            	t.account_name,
+                            	t.currency,
+                            	SUM(t.amount) balance
+                            FROM
+                            	(
+                            	SELECT 
+                            		(date_trunc('month',eom) + INTERVAL '1 MONTH - 1 day')::date reporting_period
+                            	FROM generate_series ((SELECT MIN(value_date) FROM app.transaction), date_trunc('month',now())::date-1, '1 month'::interval) eom
+                            	) rep
+                            	LEFT OUTER JOIN 
+                            	(
+                            	SELECT
+                            		t.account_id,
+                            		a.account_name,
+                            		c.iso_code currency,
+                            		t.amount,
+                            		t.value_date
+                            	FROM
+                            		app.transaction t,
+                            		app.account a,
+                            		app.currency c
+                            	WHERE
+                            		t.account_id=a.id
+                            		AND a.currency_id=c.id
+                            	) t ON rep.reporting_period>=t.value_date
+                            GROUP BY
+                            	rep.reporting_period,
+                            	t.account_id,
+                            	t.account_name,
+                            	t.currency
+                            ORDER BY 
+                            	rep.reporting_period,
+                            	t.account_id
+                              ")$result
 
-# df_curr_yc <- psqlQuery("SELECT * FROM app.yield_curve_curr_mvw ORDER BY tenor ASC")$result
-# if(nrow(df_curr_yc)!=0){
-#     df_curr_yc$type <- as.factor(df_curr_yc$type)
-#     df_curr_yc$value_date <- as.Date(df_curr_yc$value_date,"%Y-%m-%d")
-#     
-#     output$plot_yieldcurve <- renderPlotly(
-#         plot_ly() %>% 
-#             add_trace(data=df_curr_yc, 
-#                       x=~tenor, 
-#                       y=~yield, 
-#                       color=~type, 
-#                       mode="lines") %>% 
-#             layout(xaxis=list(title="Maturity (days)"), 
-#                    yaxis=list(title="Interest Rate (%)"),
-#                    showlegend = T)
-#     )
-# }
+# SERV: Accounts > Analytics ----------------------------------
 
+output$plot_brchrt_bal_development <- renderPlotly(
+        plot_ly() %>%
+        add_trace(data=q_acc_bal_dev, 
+                  x=~reporting_period,
+                  y=~balance, 
+                  color=~account_name,
+                  type = 'bar'
+                  ) %>%
+        layout(title = "Balance History of Swiss Accounts", 
+               barmode = 'stack',
+               xaxis=list(title=""), yaxis=list(title=unique(q_acc_bal_dev$currency)))
+)
 
 # SERV: Admin > Manage accounts ----------------------------------
 
@@ -843,7 +865,9 @@ dashboardSidebar(width = "270px",
                         menuSubItem("Overview", tabName = "funds_ov"),
                         menuSubItem("Prices", tabName = "fundprices")
                      ),
-                    menuItem("Accounts", tabName = "accounts", icon = icon("bank")),
+                    menuItem("Accounts", tabName = "accounts", icon = icon("bank"),
+                        menuSubItem("Analytics", tabName = "account_analytics")
+                     ),
                     menuItem("Macroeconomic Factors", tabName = NULL, icon = icon("globe"),
                               menuSubItem("FX Rates", tabName = "macro_fx")
                               # menuSubItem("Interest Rates", tabName = "macro_ir")
